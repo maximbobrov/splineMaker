@@ -43,8 +43,6 @@ double ymax = -1e10;
 double zmin = 1e10;
 double zmax = -1e10;
 
-vector<double> px, py, pz;
-
 void display(void);
 void init();
 
@@ -319,13 +317,9 @@ void SplineInterpolator::optimizeByRand(size_t itn)
             double cTmp = m_c[j];
             m_c[j] += 0.0001 * (rand() * 1.0 / RAND_MAX - 0.5);
             if(getF() < FMin)
-            {
                 FMin = getF();
-            }
             else
-            {
                 m_c[j] = cTmp;
-            }
         }
     }
 }
@@ -362,21 +356,13 @@ int SplineInterpolator::optimizeByGrad(size_t itn)
 }
 
 FileLoader* fileLoader;
+
 vector<SplineInterpolator*> splineInterpolatorsX;
 vector<SplineInterpolator*> splineInterpolatorsY;
 vector<SplineInterpolator*> splineInterpolatorsZ;
 
-/*SplineInterpolator* xInterpolator;
-SplineInterpolator* yInterpolator;
-SplineInterpolator* zInterpolator;
-
-SplineInterpolator* xGradInterpolator;
-SplineInterpolator* yGradInterpolator;
-SplineInterpolator* zGradInterpolator;*/
-
 void display(void)
 {
-    size_t i;
     double orient_x=0.0;
     double orient_y=0.0;
     double orient_z=5.0;
@@ -394,62 +380,26 @@ void display(void)
     orient_z=view_z+o_z;
     gluLookAt(view_x,view_y,view_z,orient_x,orient_y,orient_z,0,0,1);
 
-
-    for (size_t s = 0; s < fileLoader->m_data.size(); s += 10)
+    for (size_t s = 0; s < fileLoader->m_data.size(); s += 1)
     {
-        /*glLineWidth(2);
+        glLineWidth(1);
         glBegin(GL_LINE_STRIP);
-        for( i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+        for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
         {
             glColor3f(1.0,1.0,1.0);
             glVertex3f(splineInterpolatorsX[s]->m_vec[i], splineInterpolatorsY[s]->m_vec[i], splineInterpolatorsZ[s]->m_vec[i]);
         }
-        glEnd();*/
+        glEnd();
 
         glLineWidth(3);
         glBegin(GL_LINE_STRIP);
-        for( i=0; i<=100; i++ )
+        for( size_t i=0; i<=100; i++ )
         {
-            glColor3f(1.0, 0.0, 0.0);
+            glColor3f(0.0, 0.5, 0.0);
             glVertex3f(splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/100), splineInterpolatorsY[s]->S_(i*(splineInterpolatorsY[s]->m_size-1)*1.0/100), splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/100));
         }
         glEnd();
     }
-
-    /*glPointSize(7);
-    glBegin(GL_LINE_STRIP);
-    for( i = 0; i < xGradInterpolator->m_size; i++ )
-    {
-        glColor3f(1.0,1.0,1.0);
-        glVertex3f(i*1.0/(xGradInterpolator->m_size-1), xGradInterpolator->m_vec[i], 0);
-    }
-    glEnd();
-    glPointSize(7);
-    glBegin(GL_POINTS);
-    for( i = 0; i < xGradInterpolator->m_size; i++ )
-    {
-        glColor3f(1.0,1.0,1.0);
-        glVertex3f(i*1.0/(xGradInterpolator->m_size-1), xGradInterpolator->m_vec[i], 0);
-    }
-    glEnd();
-
-    glLineWidth(3);
-    glBegin(GL_LINE_STRIP);
-    for( i=0; i<=100; i++ )
-    {
-        glColor3f(0.0,1.0,0.0);
-        glVertex3f(i*1.0/100, xGradInterpolator->S_(i*(xGradInterpolator->m_size-1)*1.0/100), 0);
-    }
-    glEnd();
-
-    glLineWidth(3);
-    glBegin(GL_LINE_STRIP);
-    for( i=0; i<=100; i++ )
-    {
-        glColor3f(1.0,0.0,0.0);
-        glVertex3f(i*1.0/100, xInterpolator->S_(i*(xInterpolator->m_size-1)*1.0/100), 0);
-    }
-    glEnd();*/
 
     glutSwapBuffers();
     if (redr==1) glutPostRedisplay();
@@ -536,9 +486,6 @@ void kb(unsigned char key, int x, int y)
             splineInterpolatorsZ[s]->optimizeByGrad(1);
         }
         printf("One minimization step is done\n");
-        /*xInterpolator->optimizeByRand(500);
-        yInterpolator->optimizeByRand(500);
-        zInterpolator->optimizeByRand(500);*/
     }
     if(key == 'v')
     {
@@ -554,9 +501,6 @@ void kb(unsigned char key, int x, int y)
             }
             printf("Number no minimazed splines = %d\n", numNoMin);
         }
-        /*xGradInterpolator->optimizeByGrad(50);
-        yGradInterpolator->optimizeByGrad(50);
-        zGradInterpolator->optimizeByGrad(50);*/
     }
     if (key==' ')
     {
@@ -585,34 +529,11 @@ void init()
         splineInterpolatorsZ.push_back(new SplineInterpolator(fileLoader->m_data[i].z));
     }
     printf("Splines calculated\n");
-    /*for(int i = 0; i < 10; i++)
-    {
-        px.push_back(rand()*1.0/RAND_MAX);//rand()*1.0/RAND_MAX);   //0.5);//rand()*1.0/RAND_MAX);   //0.5 + 0.1 * rand()*1.0/RAND_MAX);//rand()*1.0/RAND_MAX);
-        py.push_back(rand()*1.0/RAND_MAX);//rand()*1.0/RAND_MAX);   //0.5);//rand()*1.0/RAND_MAX);   //0.5 + 0.1 * rand()*1.0/RAND_MAX);//rand()*1.0/RAND_MAX);
-        pz.push_back(rand()*1.0/RAND_MAX);//rand()*1.0/RAND_MAX);   //0.5);//rand()*1.0/RAND_MAX);   //0.5 + 0.1 * rand()*1.0/RAND_MAX);//rand()*1.0/RAND_MAX);
 
-        xmin = px[i] < xmin ? px[i] : xmin;
-        xmax = px[i] > xmax ? px[i] : xmax;
-        ymin = py[i] < ymin ? py[i] : ymin;
-        ymax = py[i] > ymax ? py[i] : ymax;
-        zmin = pz[i] < zmin ? pz[i] : zmin;
-        zmax = pz[i] > zmax ? pz[i] : zmax;
-    }
-
-    xInterpolator = new SplineInterpolator(px);//px //data[1].x
-    yInterpolator = new SplineInterpolator(py);//py //data[1].y
-    zInterpolator = new SplineInterpolator(pz);//pz //data[1].z
-
-    xGradInterpolator = new SplineInterpolator(fileLoader->m_data[1].x);
-    yGradInterpolator = new SplineInterpolator(fileLoader->m_data[1].y);
-    zGradInterpolator = new SplineInterpolator(fileLoader->m_data[1].z);*/
-
-    view_x=xmin-0.5*(xmax-xmin);//xmin-0.1*(xmax-xmin);//-0.1
-    view_y=ymin-0.5*(ymax-ymin);//0.5*(ymin-ymax);//0.0
-    view_z=zmin-0.5*(zmax-zmin);//0.5*(zmin-zmax);//0.0
+    view_x=xmin-0.5*(xmax-xmin);
+    view_y=ymin-0.5*(ymax-ymin);
+    view_z=zmin-0.5*(zmax-zmin);
 }
-
-
 
 int main(int argc, char** argv)
 {
@@ -627,4 +548,11 @@ int main(int argc, char** argv)
     glutKeyboardFunc(kb);
     init();
     glutMainLoop();
+
+    delete fileLoader;
+    for (size_t i = 0; i < splineInterpolatorsX.size(); i++) {
+        delete splineInterpolatorsX[i];
+        delete splineInterpolatorsY[i];
+        delete splineInterpolatorsZ[i];
+    }
 }
