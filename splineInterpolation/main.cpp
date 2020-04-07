@@ -42,6 +42,9 @@ double ymin = 1e10;
 double ymax = -1e10;
 double zmin = 1e10;
 double zmax = -1e10;
+bool drawPoint = false;
+bool drawSpline = true;
+bool drawLineSeg = true;
 
 void display(void);
 void init();
@@ -380,25 +383,42 @@ void display(void)
     orient_z=view_z+o_z;
     gluLookAt(view_x,view_y,view_z,orient_x,orient_y,orient_z,0,0,1);
 
-    for (size_t s = 0; s < fileLoader->m_data.size(); s += 1)
+    for (size_t s = 0; s < fileLoader->m_data.size(); s ++)
     {
-        glLineWidth(1);
-        glBegin(GL_LINE_STRIP);
-        for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+        if(drawPoint)
         {
-            glColor3f(1.0,1.0,1.0);
-            glVertex3f(splineInterpolatorsX[s]->m_vec[i], splineInterpolatorsY[s]->m_vec[i], splineInterpolatorsZ[s]->m_vec[i]);
+            glLineWidth(1);
+            glBegin(GL_POINTS);
+            for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+            {
+                glColor3f(1.0,1.0,1.0);
+                glVertex3f(splineInterpolatorsX[s]->m_vec[i], splineInterpolatorsY[s]->m_vec[i], splineInterpolatorsZ[s]->m_vec[i]);
+            }
+            glEnd();
         }
-        glEnd();
 
-        glLineWidth(3);
-        glBegin(GL_LINE_STRIP);
-        for( size_t i=0; i<=100; i++ )
+        if(drawLineSeg)
         {
-            glColor3f(0.0, 0.5, 0.0);
-            glVertex3f(splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/100), splineInterpolatorsY[s]->S_(i*(splineInterpolatorsY[s]->m_size-1)*1.0/100), splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/100));
+            glLineWidth(1);
+            glBegin(GL_LINE_STRIP);
+            for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+            {
+                glColor3f(1.0,1.0,1.0);
+                glVertex3f(splineInterpolatorsX[s]->m_vec[i], splineInterpolatorsY[s]->m_vec[i], splineInterpolatorsZ[s]->m_vec[i]);
+            }
+            glEnd();
         }
-        glEnd();
+        if(drawSpline)
+        {
+            glLineWidth(3);
+            glBegin(GL_LINE_STRIP);
+            for( size_t i=0; i<=100; i++ )
+            {
+                glColor3f(0.5, 0.0, 0.0);
+                glVertex3f(splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/100), splineInterpolatorsY[s]->S_(i*(splineInterpolatorsY[s]->m_size-1)*1.0/100), splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/100));
+            }
+            glEnd();
+        }
     }
 
     glutSwapBuffers();
@@ -436,6 +456,18 @@ void m_d(int button, int state,int x, int y)
 
 void kb(unsigned char key, int x, int y)
 {
+    if (key=='1')
+    {
+        drawPoint = !drawPoint;
+    }
+    if (key=='2')
+    {
+        drawSpline = !drawSpline;
+    }
+    if (key=='3')
+    {
+        drawLineSeg = !drawLineSeg;
+    }
     if (key=='.')
     {
         ck*=1.1;
