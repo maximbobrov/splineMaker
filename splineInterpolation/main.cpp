@@ -48,9 +48,9 @@ double ymin = 1e10;
 double ymax = -1e10;
 double zmin = 1e10;
 double zmax = -1e10;
-bool drawPoint = false;
+bool drawPoint = true;
 bool drawLineSeg = false;
-bool drawSpline = true;
+bool drawSpline = false;
 bool drawVelocity = false;
 bool drawAcceleration = false;
 
@@ -71,6 +71,7 @@ struct FileLoader
 {
     struct vec3
     {
+        vec3();
         vec3(double ix, double iy, double iz);
         vector<double> x;
         vector<double> y;
@@ -80,12 +81,19 @@ struct FileLoader
     FileLoader(string iPath);
     void findFileInDir();
     void loadSplines();
+    void loadSplinesFromNewFormat();
 
     string m_path;
     int m_numbers[10000000];
     vector<vec3> m_data;
+    vector<vec3> m_vel;
+    vector<vec3> m_accel;
     std::vector<char*> m_fileNames;
 };
+
+FileLoader::vec3::vec3()
+{
+}
 
 FileLoader::vec3::vec3(double ix, double iy, double iz)
 {
@@ -121,7 +129,7 @@ void FileLoader::findFileInDir()
     {
         int len = strlen (entry->d_name);
         if (len >= 4) {
-            if (strcmp (".dat", entry->d_name + len - 4) == 0)
+            if (strcmp (".txt", entry->d_name + len - 4) == 0)//if (strcmp (".dat", entry->d_name + len - 4) == 0)
             {
                 nameFile = entry->d_name;
                 nameForOpen = nameDir+ nameFile;
@@ -184,6 +192,43 @@ void FileLoader::loadSplines()
     }
 }
 
+void FileLoader::loadSplinesFromNewFormat()
+{
+    m_data.clear();
+    for (size_t i = 0 ; i < m_fileNames.size(); i++)
+    {
+        m_data.push_back(vec3());
+        m_vel.push_back(vec3());
+        m_accel.push_back(vec3());
+        FILE *file_data = fopen(m_fileNames[i], "r");
+        printf("name=%s\n", m_fileNames[i]);
+        double xx, yy, zz, xxf, yyf, zzf, vx, vy, vz, ax, ay, az;
+        m_numbers[i] = 0;
+        while(!feof (file_data))
+        {
+            fscanf(file_data,"%lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf", &xx, &yy, &zz,  &xxf, &yyf, &zzf, &vx, &vy, &vz, &ax, &ay, &az);
+
+            m_data[i].x.push_back(xx);
+            m_data[i].y.push_back(yy);
+            m_data[i].z.push_back(zz);
+            m_vel[i].x.push_back(vx);
+            m_vel[i].y.push_back(vy);
+            m_vel[i].z.push_back(vz);
+            m_accel[i].x.push_back(ax);
+            m_accel[i].y.push_back(ay);
+            m_accel[i].z.push_back(az);
+            m_numbers[i]++;
+            xmin = xx < xmin ? xx : xmin;
+            xmax = xx > xmax ? xx : xmax;
+            ymin = yy < ymin ? yy : ymin;
+            ymax = yy > ymax ? yy : ymax;
+            zmin = zz < zmin ? zz : zmin;
+            zmax = zz > zmax ? zz : zmax;
+        }
+        fclose(file_data);
+    }
+}
+
 struct SplineInterpolator
 {
     SplineInterpolator(std::vector<double> &vec);
@@ -191,6 +236,9 @@ struct SplineInterpolator
 
     double baseSpline(double x, int derivNum = 0);
     void s_sweep();
+    double getCoord(double n);
+    double getVel(double n);
+    double getAccel(double n);
     double S_(double x, int derivNum = 0);
     double getF();
     void optimizeByRand(size_t itn);
@@ -336,6 +384,23 @@ void SplineInterpolator::s_sweep()
     m_c[m_size + 1] = 2.0 * m_c[m_size] - m_c[m_size - 1];
 }
 
+double SplineInterpolator::getCoord(double n)
+{
+    return S_(n, 0);
+}
+
+double SplineInterpolator::getVel(double n)
+{
+    double dt = 0.6;
+    return S_(n, 1)/dt;
+}
+
+double SplineInterpolator::getAccel(double n)
+{
+    double dt = 0.6;
+    return S_(n, 2)/dt/dt;
+}
+
 double SplineInterpolator::S_(double x, int derivNum /*= 0*/)
 {
     int j;
@@ -357,7 +422,8 @@ double SplineInterpolator::S_(double x, int derivNum /*= 0*/)
 
 double SplineInterpolator::getF()
 {
-    double lambda = (1 / M_PI / 0.2) * (1 / M_PI / 0.2) * (1 / M_PI / 0.2);
+    double coeff = 0.6;
+    double lambda = (1 / M_PI / coeff) * (1 / M_PI / coeff) * (1 / M_PI / coeff);
     double FRes = 0.0, tmp;
     for (size_t i = 0; i < m_size; i++)
     {
@@ -489,8 +555,9 @@ void display(void)
     double minAccel = 1e100;
     double maxAccel = -1e100;
 
-    int numSplinePoints = 100;
-    int numVelVec = 20;
+    size_t numSplinePoints = 100;
+    size_t numVelVec = 20;
+
     for (size_t s = 0; s < fileLoader->m_data.size() && splineInterpolatorsX[s]->m_moreMinNumber; s++)
     {
         for( size_t i=0; i <= numVelVec; i++ )
@@ -517,9 +584,9 @@ void display(void)
     {
         if(drawPoint)
         {
-            glLineWidth(1);
+            glPointSize(3);
             glBegin(GL_POINTS);
-            for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+            for( size_t i = 0; i <= splineInterpolatorsX[s]->m_size - 1; i++ )
             {
                 glColor3f(1.0,1.0,1.0);
                 glVertex3f(splineInterpolatorsX[s]->m_vec[i], splineInterpolatorsY[s]->m_vec[i], splineInterpolatorsZ[s]->m_vec[i]);
@@ -529,7 +596,7 @@ void display(void)
 
         if(drawLineSeg)
         {
-            glLineWidth(1);
+            glLineWidth(2);
             glBegin(GL_LINE_STRIP);
             for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
             {
@@ -540,15 +607,32 @@ void display(void)
         }
         if(drawSpline)
         {
-            glLineWidth(3);
+            /*glLineWidth(3);
             glBegin(GL_LINE_STRIP);
             for( size_t i=0; i<=numSplinePoints; i++ )
             {
-                double vel = splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints, 1) *  splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints, 1)
-                        +    splineInterpolatorsY[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints, 1) *  splineInterpolatorsY[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints, 1)
-                        +    splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints, 1) *  splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints, 1);
+                double vel = splineInterpolatorsX[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints) *  splineInterpolatorsX[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints)
+                        +    splineInterpolatorsY[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints) *  splineInterpolatorsY[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints)
+                        +    splineInterpolatorsZ[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints) *  splineInterpolatorsZ[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints);
                 get_color(vel, minVel, maxVel);
-                glVertex3f(splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints), splineInterpolatorsY[s]->S_(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numSplinePoints), splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numSplinePoints));
+                glVertex3f(splineInterpolatorsX[s]->getCoord(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints), splineInterpolatorsY[s]->getCoord(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numSplinePoints), splineInterpolatorsZ[s]->getCoord(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numSplinePoints));
+            }
+            glEnd();*/
+            glPointSize(5);
+            glBegin(GL_POINTS);
+            glColor3f(0.0,1,0);
+            //glVertex3f(splineInterpolatorsX[s]->getCoord(0), splineInterpolatorsY[s]->getCoord(0), splineInterpolatorsZ[s]->getCoord(0));
+            glVertex3f(splineInterpolatorsX[s]->getCoord(splineInterpolatorsX[s]->m_size - 1), splineInterpolatorsY[s]->getCoord(splineInterpolatorsX[s]->m_size - 1), splineInterpolatorsZ[s]->getCoord(splineInterpolatorsX[s]->m_size - 1));
+            glEnd();
+            glLineWidth(3);
+            glBegin(GL_LINE_STRIP);
+            for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+            {
+                double vecX = splineInterpolatorsX[s]->getVel(i) - fileLoader->m_vel[s].x[i];
+                double vecY = splineInterpolatorsY[s]->getVel(i) - fileLoader->m_vel[s].y[i];
+                double vecZ = splineInterpolatorsZ[s]->getVel(i) - fileLoader->m_vel[s].z[i];
+                glColor3f(vecX * vecX + vecY * vecY + vecZ * vecZ,0.01,0.01);
+                glVertex3f(splineInterpolatorsX[s]->getCoord(i), splineInterpolatorsY[s]->getCoord(i), splineInterpolatorsZ[s]->getCoord(i));
             }
             glEnd();
         }
@@ -558,14 +642,14 @@ void display(void)
             glBegin(GL_LINES);
             for( size_t i=0; i<=numVelVec; i++)
             {
-                double vel = splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1) *  splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1)
-                        +    splineInterpolatorsY[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1) *  splineInterpolatorsY[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1)
-                        +    splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1) *  splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1);
+                double vel = splineInterpolatorsX[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec) *  splineInterpolatorsX[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
+                        +    splineInterpolatorsY[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec) *  splineInterpolatorsY[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
+                        +    splineInterpolatorsZ[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec) *  splineInterpolatorsZ[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec);
                 get_color(vel, minVel, maxVel);
-                glVertex3f(splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec), splineInterpolatorsY[s]->S_(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec), splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numVelVec));
-                glVertex3f(splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)   + scale * 5.0 * splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1)
-                           , splineInterpolatorsY[s]->S_(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec) + scale * 5.0 * splineInterpolatorsY[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1)
-                           , splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numVelVec) + scale * 5.0 * splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1));
+                glVertex3f(splineInterpolatorsX[s]->getCoord(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec), splineInterpolatorsY[s]->S_(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec), splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numVelVec));
+                glVertex3f(splineInterpolatorsX[s]->getCoord(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)   + scale * 5.0 * splineInterpolatorsX[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
+                           , splineInterpolatorsY[s]->getCoord(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec) + scale * 5.0 * splineInterpolatorsY[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
+                           , splineInterpolatorsZ[s]->getCoord(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numVelVec) + scale * 5.0 * splineInterpolatorsZ[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec));
             }
             glEnd();
         }
@@ -575,14 +659,14 @@ void display(void)
             glBegin(GL_LINES);
             for( size_t i=0; i<=numVelVec; i++)
             {
-                double accel = splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2) *  splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2)
-                        +      splineInterpolatorsY[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2) *  splineInterpolatorsY[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2)
-                        +      splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2) *  splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2);
+                double accel = splineInterpolatorsX[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec) *  splineInterpolatorsX[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
+                        +      splineInterpolatorsY[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec) *  splineInterpolatorsY[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
+                        +      splineInterpolatorsZ[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec) *  splineInterpolatorsZ[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec);
                 get_color(accel, minAccel, maxAccel);
-                glVertex3f( splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec), splineInterpolatorsY[s]->S_(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec), splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numVelVec));
-                glVertex3f( splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)  + scale * 30.0 * splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2)
-                            ,splineInterpolatorsY[s]->S_(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec) + scale * 30.0 * splineInterpolatorsY[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2)
-                            ,splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numVelVec) + scale * 30.0 * splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2));
+                glVertex3f( splineInterpolatorsX[s]->getCoord(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec), splineInterpolatorsY[s]->getCoord(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec), splineInterpolatorsZ[s]->getCoord(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numVelVec));
+                glVertex3f( splineInterpolatorsX[s]->getCoord(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)  + scale * 30.0 * splineInterpolatorsX[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
+                            ,splineInterpolatorsY[s]->getCoord(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec) + scale * 30.0 * splineInterpolatorsY[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
+                            ,splineInterpolatorsZ[s]->getCoord(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numVelVec) + scale * 30.0 * splineInterpolatorsZ[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec));
             }
             glEnd();
         }
@@ -629,6 +713,33 @@ void threadOptimize(int threadIdx, int startIdx, int endIdx)
         isNoOptimized[threadIdx] += splineInterpolatorsY[s]->optimizeByGrad(1);
         isNoOptimized[threadIdx] += splineInterpolatorsZ[s]->optimizeByGrad(1);
     }
+}
+
+void calcEfficient()
+{
+    double averVelError = 0;
+    double averAccelError = 0;
+    int number = 0;
+    //printf("u10_10 = %f v = %f v = %f\n",splineInterpolatorsX[100]->getVel(10), splineInterpolatorsY[100]->getVel(10), splineInterpolatorsZ[100]->getVel(10));
+    //printf("realu10_10 = %f v = %f v = %f\n",fileLoader->m_vel[100].x[10], fileLoader->m_vel[100].y[10], fileLoader->m_vel[100].z[10]);
+    for (size_t s = 0; s < fileLoader->m_data.size() /*&& splineInterpolatorsX[s]->m_moreMinNumber*/; s++)
+    {
+        for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+        {
+            double vecX = splineInterpolatorsX[s]->getVel(i) - fileLoader->m_vel[s].x[i];
+            double vecY = splineInterpolatorsY[s]->getVel(i) - fileLoader->m_vel[s].y[i];
+            double vecZ = splineInterpolatorsZ[s]->getVel(i) - fileLoader->m_vel[s].z[i];
+            averVelError += vecX * vecX + vecY * vecY + vecZ * vecZ;
+
+            double accelX = splineInterpolatorsX[s]->getAccel(i) - fileLoader->m_accel[s].x[i];
+            double accelY = splineInterpolatorsY[s]->getAccel(i) - fileLoader->m_accel[s].y[i];
+            double accelZ = splineInterpolatorsZ[s]->getAccel(i) - fileLoader->m_accel[s].z[i];
+            averAccelError += accelX * accelX + accelY * accelY + accelZ * accelZ;
+
+            number++;
+        }
+    }
+    printf("DiffVel = %f DiffAccel = %f \n", sqrt(averVelError/number), sqrt(averAccelError/number));
 }
 
 void kb(unsigned char key, int x, int y)
@@ -712,6 +823,10 @@ void kb(unsigned char key, int x, int y)
         }
         printf("One minimization step is done\n");
     }
+    if(key == 'z')
+    {
+        calcEfficient();
+    }
     if(key == 'v')
     {
         int numNoMin = 1;
@@ -757,9 +872,9 @@ void init()
     glLoadIdentity ();
     gluPerspective(45.0f, W_WIDTH*1.0/W_HEIGHT, 0.1f, 250.0f);
     glMatrixMode (GL_MODELVIEW);
-    fileLoader = new FileLoader("DA_ppp_0_005/");
+    fileLoader = new FileLoader("test/");//"DA_ppp_0_005/"
     fileLoader->findFileInDir();
-    fileLoader->loadSplines();
+    fileLoader->loadSplinesFromNewFormat();//fileLoader->loadSplines();
     printf("Points loaded\n");
     for (size_t i = 0; i < fileLoader->m_data.size(); i++)
     {
