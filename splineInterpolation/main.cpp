@@ -206,24 +206,26 @@ void FileLoader::loadSplinesFromNewFormat()
         m_numbers[i] = 0;
         while(!feof (file_data))
         {
-            fscanf(file_data,"%lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf", &xx, &yy, &zz,  &xxf, &yyf, &zzf, &vx, &vy, &vz, &ax, &ay, &az);
-
-            m_data[i].x.push_back(xx);
-            m_data[i].y.push_back(yy);
-            m_data[i].z.push_back(zz);
-            m_vel[i].x.push_back(vx);
-            m_vel[i].y.push_back(vy);
-            m_vel[i].z.push_back(vz);
-            m_accel[i].x.push_back(ax);
-            m_accel[i].y.push_back(ay);
-            m_accel[i].z.push_back(az);
-            m_numbers[i]++;
-            xmin = xx < xmin ? xx : xmin;
-            xmax = xx > xmax ? xx : xmax;
-            ymin = yy < ymin ? yy : ymin;
-            ymax = yy > ymax ? yy : ymax;
-            zmin = zz < zmin ? zz : zmin;
-            zmax = zz > zmax ? zz : zmax;
+            int out=fscanf(file_data,"%lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf", &xx, &yy, &zz,  &xxf, &yyf, &zzf, &vx, &vy, &vz, &ax, &ay, &az);
+            if (out>0)
+            {
+                m_data[i].x.push_back(xx);
+                m_data[i].y.push_back(yy);
+                m_data[i].z.push_back(zz);
+                m_vel[i].x.push_back(vx);
+                m_vel[i].y.push_back(vy);
+                m_vel[i].z.push_back(vz);
+                m_accel[i].x.push_back(ax);
+                m_accel[i].y.push_back(ay);
+                m_accel[i].z.push_back(az);
+                m_numbers[i]++;
+                xmin = xx < xmin ? xx : xmin;
+                xmax = xx > xmax ? xx : xmax;
+                ymin = yy < ymin ? yy : ymin;
+                ymax = yy > ymax ? yy : ymax;
+                zmin = zz < zmin ? zz : zmin;
+                zmax = zz > zmax ? zz : zmax;
+            }
         }
         fclose(file_data);
     }
@@ -236,6 +238,7 @@ struct SplineInterpolator
 
     double baseSpline(double x, int derivNum = 0);
     void s_sweep();
+    void s_sweep_GaussSeidel(size_t itn); //iterative solver
     double getCoord(double n);
     double getVel(double n);
     double getAccel(double n);
@@ -359,9 +362,9 @@ void SplineInterpolator::s_sweep()
     double m;
     for (size_t i = 1 ; i < m_size+1; i++)
     {
-        m_C[i] = 4.0/6;
-        m_A[i] = 1.0/6;
-        m_B[i] = 1.0/6;
+        m_C[i] = 4.0/6.0;
+        m_A[i] = 1.0/6.0;
+        m_B[i] = 1.0/6.0;
     }
     m_A[1] = 0.0;
     m_B[1] = 0.0;
@@ -382,6 +385,29 @@ void SplineInterpolator::s_sweep()
     }
     m_c[0] = 2.0 * m_c[1] - m_c[2];
     m_c[m_size + 1] = 2.0 * m_c[m_size] - m_c[m_size - 1];
+    s_sweep_GaussSeidel(100);
+}
+
+void SplineInterpolator::s_sweep_GaussSeidel(size_t itn)
+{
+    for (size_t i = 1 ; i < m_size + 1; i++)
+    {
+        m_C[i] = 4.0/6.0;
+        m_A[i] = 1.0/6.0;
+        m_B[i] = 1.0/6.0;
+    }
+    for (size_t n = 0; n < itn; n++)
+    {
+        m_c[0] = m_c[3] + 3.0 * m_c[1] - 3.0 * m_c[2];
+        for (size_t i = 1 ; i < m_size + 1; i++)
+        {
+            m_c[i] = m_c[i] * 0.7 + 0.3 * (m_f[i] - m_c[i - 1] * m_A[i] - m_c[i + 1] * m_B[i]) / m_C[i];
+        }
+        m_c[m_size + 1] = m_c[m_size - 2] - 3.0 * m_c[m_size - 1] + 3.0 * m_c[m_size];
+
+        size_t i = m_size;
+        m_c[i] = m_c[i] * 0.7 + 0.3 * (m_f[i] - m_c[i - 1] * m_A[i] - m_c[i + 1] * m_B[i]) / m_C[i];
+    }
 }
 
 double SplineInterpolator::getCoord(double n)
@@ -398,7 +424,7 @@ double SplineInterpolator::getVel(double n)
 double SplineInterpolator::getAccel(double n)
 {
     double dt = 0.6;
-    return S_(n, 2)/dt/dt;
+    return S_(n, 2)/dt/dt*1000.0;
 }
 
 double SplineInterpolator::S_(double x, int derivNum /*= 0*/)
@@ -409,8 +435,10 @@ double SplineInterpolator::S_(double x, int derivNum /*= 0*/)
     j = (int) ff;
     double sum=0;
 
-    m_c[0] = 2.0 * m_c[1] - m_c[2];
-    m_c[m_size + 1] = 2.0 * m_c[m_size] - m_c[m_size - 1];
+    m_c[0] = m_c[3] + 3.0 * m_c[1] - 3.0 * m_c[2];
+    m_c[m_size+1] = m_c[m_size-2] - 3.0 * m_c[m_size-1] + 3.0 * m_c[m_size];
+    //m_c[0] = 2.0 * m_c[1] - m_c[2];
+    //m_c[m_size + 1] = 2.0 * m_c[m_size] - m_c[m_size - 1];
     for (int i = j - 1;i <= j + 2;i++)
     {
         {
@@ -717,19 +745,27 @@ void threadOptimize(int threadIdx, int startIdx, int endIdx)
 
 void calcEfficient()
 {
-    double averVelError = 0;
-    double averAccelError = 0;
+    double averPosError = 0.0;
+    double averVelError = 0.0;
+    double averAccelError = 0.0;
+    double meanVel = 0.0;
     int number = 0;
-    //printf("u10_10 = %f v = %f v = %f\n",splineInterpolatorsX[100]->getVel(10), splineInterpolatorsY[100]->getVel(10), splineInterpolatorsZ[100]->getVel(10));
-    //printf("realu10_10 = %f v = %f v = %f\n",fileLoader->m_vel[100].x[10], fileLoader->m_vel[100].y[10], fileLoader->m_vel[100].z[10]);
+    int numToSkip = 1;
     for (size_t s = 0; s < fileLoader->m_data.size() /*&& splineInterpolatorsX[s]->m_moreMinNumber*/; s++)
     {
-        for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+        for( size_t i = numToSkip; i < splineInterpolatorsX[s]->m_size - numToSkip; i++ )
         {
+            double posX = splineInterpolatorsX[s]->getCoord(i) - fileLoader->m_data[s].x[i];
+            double posY = splineInterpolatorsY[s]->getCoord(i) - fileLoader->m_data[s].y[i];
+            double posZ = splineInterpolatorsZ[s]->getCoord(i) - fileLoader->m_data[s].z[i];
+            averPosError += posX * posX + posY * posY + posZ * posZ;
+
             double vecX = splineInterpolatorsX[s]->getVel(i) - fileLoader->m_vel[s].x[i];
             double vecY = splineInterpolatorsY[s]->getVel(i) - fileLoader->m_vel[s].y[i];
             double vecZ = splineInterpolatorsZ[s]->getVel(i) - fileLoader->m_vel[s].z[i];
             averVelError += vecX * vecX + vecY * vecY + vecZ * vecZ;
+            meanVel+=sqrt(fileLoader->m_vel[s].x[i]*fileLoader->m_vel[s].x[i] + fileLoader->m_vel[s].y[i]*fileLoader->m_vel[s].y[i] + fileLoader->m_vel[s].z[i]*fileLoader->m_vel[s].z[i]);
+
 
             double accelX = splineInterpolatorsX[s]->getAccel(i) - fileLoader->m_accel[s].x[i];
             double accelY = splineInterpolatorsY[s]->getAccel(i) - fileLoader->m_accel[s].y[i];
@@ -739,7 +775,23 @@ void calcEfficient()
             number++;
         }
     }
-    printf("DiffVel = %f DiffAccel = %f \n", sqrt(averVelError/number), sqrt(averAccelError/number));
+    printf("DiffVel = %f DiffAccel = %f DiffPos = %f \n", sqrt(averVelError/number),sqrt(averAccelError/number),sqrt(averPosError/number));
+}
+
+void saveInFile()
+{
+    for (size_t s = 0; s < fileLoader->m_data.size() /*&& splineInterpolatorsX[s]->m_moreMinNumber*/; s++)
+    {
+        FILE *file_data=fopen(fileLoader->m_fileNames[s],"w");
+        for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+        {
+                fprintf(file_data,"%lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf\n", splineInterpolatorsX[s]->getCoord(i), splineInterpolatorsY[s]->getCoord(i), splineInterpolatorsZ[s]->getCoord(i)
+                        , splineInterpolatorsX[s]->getCoord(i), splineInterpolatorsY[s]->getCoord(i), splineInterpolatorsZ[s]->getCoord(i)
+                        , splineInterpolatorsX[s]->getVel(i), splineInterpolatorsY[s]->getVel(i), splineInterpolatorsZ[s]->getVel(i)
+                        , splineInterpolatorsX[s]->getAccel(i), splineInterpolatorsY[s]->getAccel(i), splineInterpolatorsZ[s]->getAccel(i));
+        }
+            fclose(file_data);
+    }
 }
 
 void kb(unsigned char key, int x, int y)
@@ -827,12 +879,18 @@ void kb(unsigned char key, int x, int y)
     {
         calcEfficient();
     }
+    if(key == 'x')
+    {
+        saveInFile();
+    }
     if(key == 'v')
     {
         int numNoMin = 1;
+        int numToStop = 0;
         double time1=get_time();
-        while (numNoMin != 0)
+        while (numNoMin != 0 && numToStop < 10000)
         {
+            numToStop++;
             numNoMin = 0;
             std::vector <std::thread> th_vec;
             th_vec.clear();
