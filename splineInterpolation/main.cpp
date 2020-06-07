@@ -1,518 +1,13 @@
+#include "globals.h"
+#include "tools.h"
+#include "fileloader.h"
+#include "splineinterpolator.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <my_include/gl.h>
-#include <my_include/glu.h>
-#include <my_include/glut.h>
-#include  <math.h>
-#include <time.h>
-#include <iostream>
-#include <vector>
-#include <string>
-#include <fstream>
-#include "dirent.h"
-#include <thread>
-#include <sys/time.h>
-
-#define W_WIDTH 1600
-#define W_HEIGHT 1300
-
-#define THREADNUM 16
-using namespace std;
-
-int clear_w = 1.0;
-
-int mx0,my0;
-int rotate = 0;
-float rx0 = 0.0;
-float ry0 = 0.0;
-float rx = rx0;
-float ry = ry0;
-double mouse_x,mouse_y;
-int redr=0;
-double ck=0.1;
-double scale  = 1.0;
-double view_x=14.507903;
-double view_y=8.300000;
-double view_z=24.2;
-double o_x=0.0;
-double o_y=0.0;
-double o_z=0.0;
-int itn=0;
-int kCur= 0;
-double sc=1;
-double cv=0.001;
-double xmin = 1e10;
-double xmax = -1e10;
-double ymin = 1e10;
-double ymax = -1e10;
-double zmin = 1e10;
-double zmax = -1e10;
-bool drawPoint = true;
-bool drawLineSeg = false;
-bool drawSpline = false;
-bool drawVelocity = false;
-bool drawAcceleration = false;
-
-int isNoOptimized[THREADNUM];
+#define NUMCELLS 10
 
 void threadOptimize(int threadIdx, int startIdx, int endIdx);
 void display(void);
 void init();
-
-double get_time(void) {
-    struct timeval tv;
-    struct timezone tz;
-    gettimeofday(&tv, &tz);
-    return ((double)(tv.tv_sec+tv.tv_usec*1.0e-6));
-}
-
-struct FileLoader
-{
-    struct vec3
-    {
-        vec3();
-        vec3(double ix, double iy, double iz);
-        vector<double> x;
-        vector<double> y;
-        vector<double> z;
-    };
-
-    FileLoader(string iPath);
-    void findFileInDir();
-    void loadSplines();
-    void loadSplinesFromNewFormat();
-
-    string m_path;
-    int m_numbers[10000000];
-    vector<vec3> m_data;
-    vector<vec3> m_vel;
-    vector<vec3> m_accel;
-    std::vector<char*> m_fileNames;
-};
-
-FileLoader::vec3::vec3()
-{
-}
-
-FileLoader::vec3::vec3(double ix, double iy, double iz)
-{
-    x.push_back(ix);
-    y.push_back(iy);
-    z.push_back(iz);
-}
-
-FileLoader::FileLoader(string iPath)
-{
-    m_path = iPath;
-    for (size_t i = 0; i < 1000000; i++)
-    {
-        m_numbers[i] = -1;
-    }
-}
-
-int strCompare(const void * a, const void * b)
-{
-    return strcmp(*(char**)a, *(char**)b);
-}
-
-void FileLoader::findFileInDir()
-{
-    std::string nameFile,nameForOpen;
-    std::string nameDir(m_path);
-    DIR *mydir = opendir(nameDir.data());
-    if(mydir == NULL) {
-        perror("opendir");
-    }
-    struct dirent* entry;
-    while ((entry = readdir(mydir)))
-    {
-        int len = strlen (entry->d_name);
-        if (len >= 4) {
-            if (strcmp (".txt", entry->d_name + len - 4) == 0)//if (strcmp (".dat", entry->d_name + len - 4) == 0)
-            {
-                nameFile = entry->d_name;
-                nameForOpen = nameDir+ nameFile;
-                char *str = new char[nameForOpen.length() + 1];
-                strcpy(str, nameForOpen.c_str());
-                m_fileNames.push_back(str);
-            }
-        }
-    }
-    char* sort_char_array[m_fileNames.size()];
-    for (size_t i = 0 ;i < m_fileNames.size();i++)
-        sort_char_array[i] = m_fileNames[i];
-    qsort (sort_char_array, m_fileNames.size(), sizeof(sizeof(char**)), strCompare);
-    for (size_t i =0 ; i < m_fileNames.size();i++)
-    {
-        m_fileNames[i] = sort_char_array[i];
-        printf("FilesName= %s\n",m_fileNames[i]);
-    }
-    closedir(mydir);
-}
-
-void FileLoader::loadSplines()
-{
-    m_data.clear();
-    for (size_t i = 0 ; i < m_fileNames.size(); i++)
-    {
-        FILE *file_data = fopen(m_fileNames[i], "r");
-        printf("name=%s\n", m_fileNames[i]);
-        char str[128];
-        fgets(str, sizeof(str), file_data);
-        fgets(str, sizeof(str), file_data);
-        fgets(str, sizeof(str), file_data);
-        double xx, yy, zz;
-        int num;
-        while(!feof (file_data))
-        {
-            fscanf(file_data,"%lf %lf %lf %d", &xx, &yy, &zz, &num);
-            if((num >= 0) && (num < 1000000))
-            {
-                if(m_numbers[num] == -1)
-                {
-                    m_numbers[num] = m_data.size();
-                    m_data.push_back(vec3(xx, yy, zz));
-                }
-                else
-                {
-                    m_data[m_numbers[num]].x.push_back(xx);
-                    m_data[m_numbers[num]].y.push_back(yy);
-                    m_data[m_numbers[num]].z.push_back(zz);
-                    xmin = xx < xmin ? xx : xmin;
-                    xmax = xx > xmax ? xx : xmax;
-                    ymin = yy < ymin ? yy : ymin;
-                    ymax = yy > ymax ? yy : ymax;
-                    zmin = zz < zmin ? zz : zmin;
-                    zmax = zz > zmax ? zz : zmax;
-                }
-            }
-        }
-        fclose(file_data);
-    }
-}
-
-void FileLoader::loadSplinesFromNewFormat()
-{
-    m_data.clear();
-    for (size_t i = 0 ; i < m_fileNames.size(); i++)
-    {
-        m_data.push_back(vec3());
-        m_vel.push_back(vec3());
-        m_accel.push_back(vec3());
-        FILE *file_data = fopen(m_fileNames[i], "r");
-        printf("name=%s\n", m_fileNames[i]);
-        double xx, yy, zz, xxf, yyf, zzf, vx, vy, vz, ax, ay, az;
-        m_numbers[i] = 0;
-        while(!feof (file_data))
-        {
-            int out=fscanf(file_data,"%lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf", &xx, &yy, &zz,  &xxf, &yyf, &zzf, &vx, &vy, &vz, &ax, &ay, &az);
-            if (out>0)
-            {
-                m_data[i].x.push_back(xx);
-                m_data[i].y.push_back(yy);
-                m_data[i].z.push_back(zz);
-                m_vel[i].x.push_back(vx);
-                m_vel[i].y.push_back(vy);
-                m_vel[i].z.push_back(vz);
-                m_accel[i].x.push_back(ax);
-                m_accel[i].y.push_back(ay);
-                m_accel[i].z.push_back(az);
-                m_numbers[i]++;
-                xmin = xx < xmin ? xx : xmin;
-                xmax = xx > xmax ? xx : xmax;
-                ymin = yy < ymin ? yy : ymin;
-                ymax = yy > ymax ? yy : ymax;
-                zmin = zz < zmin ? zz : zmin;
-                zmax = zz > zmax ? zz : zmax;
-            }
-        }
-        fclose(file_data);
-    }
-}
-
-struct SplineInterpolator
-{
-    SplineInterpolator(std::vector<double> &vec);
-    ~SplineInterpolator();
-
-    double baseSpline(double x, int derivNum = 0);
-    void s_sweep();
-    void s_sweep_GaussSeidel(size_t itn); //iterative solver
-    double getCoord(double n);
-    double getVel(double n);
-    double getAccel(double n);
-    double S_(double x, int derivNum = 0);
-    double getF();
-    void optimizeByRand(size_t itn);
-    int optimizeByGrad(size_t itn);
-    void calcGrad(double fBefore);
-
-    double m_tolerance;
-    double m_optimizationStep;
-    size_t m_size;
-    std::vector<double> m_vec;
-    double m_dF;
-    bool m_moreMinNumber;
-
-    double* m_c;
-    double* m_f;
-    double* m_x;
-    double* m_A;
-    double* m_B;
-    double* m_C;
-    double* m_alpha;
-    double* m_betta;
-    double* m_cGrad;
-};
-
-SplineInterpolator::SplineInterpolator(std::vector<double> &vec)
-{
-    m_size = vec.size();
-    m_moreMinNumber = vec.size() >= 3;
-    m_vec = vec;
-    m_c     = new double[m_size + 2];
-    m_f     = new double[m_size + 2];
-    m_x     = new double[m_size + 2];
-    m_A     = new double[m_size + 1];
-    m_B     = new double[m_size + 1];
-    m_C     = new double[m_size + 1];
-    m_alpha = new double[m_size + 1];
-    m_betta = new double[m_size + 1];
-    m_cGrad = new double[m_size + 1];
-
-    for (size_t i = 1 ; i < m_size + 1; i++)
-    {
-        m_f[i] = vec[i-1];
-        m_x[i] = vec[i-1];
-    }
-    m_dF = 1.0;
-    m_tolerance = 1e-6;
-    m_optimizationStep = m_tolerance;
-    s_sweep();
-}
-
-SplineInterpolator::~SplineInterpolator()
-{
-    delete m_c;
-    delete m_f;
-    delete m_x;
-    delete m_A;
-    delete m_B;
-    delete m_C;
-    delete m_alpha;
-    delete m_betta;
-    delete m_cGrad;
-}
-
-double SplineInterpolator::baseSpline(double x, int derivNum /*= 0*/)
-{
-    if (derivNum == 0)
-    {
-        if (x<=-2.0)
-            return 0;
-        else if ((x>-2)&&(x<=-1))
-            return (1.0/6.0) * (2.0 + x) * (2.0 + x) * (2.0 + x);
-        else if ((x>-1)&&(x<=0))
-            return (4.0/6.0 - (x) * (x) - 0.5 * (x) * (x) * (x));
-        else if ((x>0)&&(x<=1))
-            return (4.0/6.0 - x * x + 0.5 * x * x * x);
-        else if((x>1)&&(x<=2))
-            return (1.0/6.0)*(2.0-x)*(2.0-x)*(2.0-x);
-        else if (x>2.0)
-            return 0;
-        else return 0;
-    }
-    if (derivNum == 1)
-    {
-        if (x<=-2.0)
-            return 0;
-        else if ((x>-2)&&(x<=-1))
-            return (3.0/6.0)*(2.0+x)*(2.0+x);
-        else if ((x>-1)&&(x<=0))
-            return ( -2.0 * x - 1.5 * x * x);
-        else if ((x>0)&&(x<=1))
-            return (- 2.0 * x + 1.5 * x * x);
-        else if((x>1)&&(x<=2))
-            return (-3.0/6.0)*(2.0-x)*(2.0-x);
-        else if (x>2.0)
-            return 0;
-        else return 0;
-    }
-    if (derivNum == 2)
-    {
-        if (x<=-2.0)
-            return 0;
-        else if ((x>-2)&&(x<=-1))
-            return (2.0 + x);
-        else if ((x>-1)&&(x<=0))
-            return (-2.0 - 3.0 * x);
-        else if ((x>0)&&(x<=1))
-            return (-2.0 + 3.0 * x);
-        else if((x>1)&&(x<=2))
-            return (2.0 - x);
-        else if (x>2.0)
-            return 0;
-        else return 0;
-    }
-}
-
-void SplineInterpolator::s_sweep()
-{
-    double m;
-    for (size_t i = 1 ; i < m_size+1; i++)
-    {
-        m_C[i] = 4.0/6.0;
-        m_A[i] = 1.0/6.0;
-        m_B[i] = 1.0/6.0;
-    }
-    m_A[1] = 0.0;
-    m_B[1] = 0.0;
-    m_C[1] = 1.0;
-    m_A[m_size] = 0;
-    m_B[m_size] = 0;
-    m_C[m_size] = m_C[1];
-    for (size_t i = 2; i < m_size + 1; i++)
-    {
-        m = m_A[i] / m_C[i - 1];
-        m_C[i] = m_C[i] - m * m_B[i - 1];
-        m_x[i] = m_x[i] - m * m_x[i - 1];
-    }
-    m_c[m_size] = m_x[m_size] / m_C[m_size];
-    for (size_t i = m_size - 1; i >= 1; i--)
-    {
-        m_c[i] = (m_x[i] - m_B[i] * m_c[i + 1]) / m_C[i];
-    }
-    m_c[0] = 2.0 * m_c[1] - m_c[2];
-    m_c[m_size + 1] = 2.0 * m_c[m_size] - m_c[m_size - 1];
-    s_sweep_GaussSeidel(100);
-}
-
-void SplineInterpolator::s_sweep_GaussSeidel(size_t itn)
-{
-    for (size_t i = 1 ; i < m_size + 1; i++)
-    {
-        m_C[i] = 4.0/6.0;
-        m_A[i] = 1.0/6.0;
-        m_B[i] = 1.0/6.0;
-    }
-    for (size_t n = 0; n < itn; n++)
-    {
-        m_c[0] = m_c[3] + 3.0 * m_c[1] - 3.0 * m_c[2];
-        for (size_t i = 1 ; i < m_size + 1; i++)
-        {
-            m_c[i] = m_c[i] * 0.7 + 0.3 * (m_f[i] - m_c[i - 1] * m_A[i] - m_c[i + 1] * m_B[i]) / m_C[i];
-        }
-        m_c[m_size + 1] = m_c[m_size - 2] - 3.0 * m_c[m_size - 1] + 3.0 * m_c[m_size];
-
-        size_t i = m_size;
-        m_c[i] = m_c[i] * 0.7 + 0.3 * (m_f[i] - m_c[i - 1] * m_A[i] - m_c[i + 1] * m_B[i]) / m_C[i];
-    }
-}
-
-double SplineInterpolator::getCoord(double n)
-{
-    return S_(n, 0);
-}
-
-double SplineInterpolator::getVel(double n)
-{
-    double dt = 0.6;
-    return S_(n, 1)/dt;
-}
-
-double SplineInterpolator::getAccel(double n)
-{
-    double dt = 0.6;
-    return S_(n, 2)/dt/dt*1000.0;
-}
-
-double SplineInterpolator::S_(double x, int derivNum /*= 0*/)
-{
-    int j;
-    double ff;
-    ff = x + 1.0;
-    j = (int) ff;
-    double sum=0;
-
-    m_c[0] = m_c[3] + 3.0 * m_c[1] - 3.0 * m_c[2];
-    m_c[m_size+1] = m_c[m_size-2] - 3.0 * m_c[m_size-1] + 3.0 * m_c[m_size];
-    //m_c[0] = 2.0 * m_c[1] - m_c[2];
-    //m_c[m_size + 1] = 2.0 * m_c[m_size] - m_c[m_size - 1];
-    for (int i = j - 1;i <= j + 2;i++)
-    {
-        {
-            sum += baseSpline(ff - i, derivNum) * m_c[i];
-        }
-    }
-    return sum;
-}
-
-double SplineInterpolator::getF()
-{
-    double coeff = 0.6;
-    double lambda = (1 / M_PI / coeff) * (1 / M_PI / coeff) * (1 / M_PI / coeff);
-    double FRes = 0.0, tmp;
-    for (size_t i = 0; i < m_size; i++)
-    {
-        tmp = S_(i) - m_vec[i];
-        FRes += tmp * tmp;
-    }
-    for (size_t i = 1; i < m_size; i++)
-    {
-        tmp = m_c[i - 1] - 3 * m_c[i] + 3 * m_c[i + 1] - m_c[i + 2];
-        FRes += lambda * tmp * tmp;
-    }
-    return FRes;
-}
-
-void SplineInterpolator::optimizeByRand(size_t itn)
-{
-    double FMin = getF();
-    for(size_t i = 0; i < itn; i++)
-    {
-        for(size_t j = 0; j <= m_size + 1; j++)
-        {
-            double cTmp = m_c[j];
-            m_c[j] += 0.0001 * (rand() * 1.0 / RAND_MAX - 0.5);
-            if(getF() < FMin)
-                FMin = getF();
-            else
-                m_c[j] = cTmp;
-        }
-    }
-}
-
-void SplineInterpolator::calcGrad(double FBefore)
-{
-    for(size_t j = 0; j <= m_size + 1; j++)
-    {
-        double dc = 0.1 * m_optimizationStep;
-        double cTmp = m_c[j];
-        m_c[j] += dc;
-        m_cGrad[j] = (getF() - FBefore) / dc;
-        m_c[j] = cTmp;
-    }
-}
-
-int SplineInterpolator::optimizeByGrad(size_t itn)
-{
-    if(fabs(m_dF) > m_tolerance)
-    {
-        double FBefore = getF();
-        for(size_t i = 0; i < itn; i++)
-        {
-            calcGrad(FBefore);
-            for(size_t j = 0; j <= m_size + 1; j++)
-            {
-                m_c[j] -= 0.001 * m_cGrad[j];
-            }
-        }
-        m_dF = FBefore - getF();
-        return 1;
-    }
-    return 0;
-}
 
 FileLoader* fileLoader;
 
@@ -520,43 +15,9 @@ vector<SplineInterpolator*> splineInterpolatorsX;
 vector<SplineInterpolator*> splineInterpolatorsY;
 vector<SplineInterpolator*> splineInterpolatorsZ;
 
+vector<posVelAccel> currValues;
 
-
-void get_color(double gval, double min, double max)
-{
-    const int nn=4;
-    int i;
-    double val;
-    val=gval;
-    if (val>max) val=max;
-    if (val<min) val=min;
-
-    typedef struct {
-        double x,y,z;
-    } XYZ;
-
-    XYZ col_table[5];
-
-    col_table[0].x = 0.0; col_table[0].y = 0.0; col_table[0].z = 1.0;
-    col_table[1].x = 0.0; col_table[1].y = 1.0; col_table[1].z = 1.0;
-    col_table[2].x = 0.0; col_table[2].y = 1.0; col_table[2].z = 0.0;
-    col_table[3].x = 1.0; col_table[3].y = 1.0; col_table[3].z = 0.0;
-    col_table[4].x = 1.0; col_table[4].y = 0.0; col_table[4].z = 0.0;
-
-    double alpha;
-    if ((max-min) > 1e-35)
-    {
-        alpha=(val-min)/(max-min)*nn;
-        i=(int)(alpha);
-        alpha=alpha-i;
-    }
-    else
-    {
-        alpha=0.0;
-        i=2;
-    }
-    glColor3f(col_table[i].x * (1 - alpha) + col_table[i+1].x * alpha, col_table[i].y * (1 - alpha) + col_table[i+1].y * alpha, col_table[i].z * (1 - alpha) + col_table[i+1].z * alpha);
-}
+vector<int> particlesGrid[NUMCELLS][NUMCELLS][NUMCELLS];
 
 void display(void)
 {
@@ -577,56 +38,132 @@ void display(void)
     orient_z=view_z+o_z;
     gluLookAt(view_x,view_y,view_z,orient_x,orient_y,orient_z,0,0,1);
 
-    double minVel = 1e100;
-    double maxVel = -1e100;
-
-    double minAccel = 1e100;
-    double maxAccel = -1e100;
-
-    size_t numSplinePoints = 100;
     size_t numVelVec = 20;
+    size_t numSplinePoints = 100;
+    size_t drawSplineStep = 100;
+    size_t drawPointStep = 1;
 
-    for (size_t s = 0; s < fileLoader->m_data.size() && splineInterpolatorsX[s]->m_moreMinNumber; s++)
+    if(!rangeCalculated)
     {
-        for( size_t i=0; i <= numVelVec; i++ )
+        for (size_t s = 0; s < fileLoader->m_splinesCount; s++)
         {
-            double vel = splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1) *  splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1)
-                    +    splineInterpolatorsY[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1) *  splineInterpolatorsY[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1)
-                    +    splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1) *  splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 1);
-            if(minVel > vel)
-                minVel = vel;
-            if(maxVel < vel)
-                maxVel = vel;
+            if(!splineInterpolatorsX[s]->m_moreMinNumber)
+                continue;
+            for( size_t i=0; i <= numSplinePoints; i++ )
+            {
+                double vel = splineInterpolatorsX[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints) *  splineInterpolatorsX[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints)
+                        +    splineInterpolatorsY[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints) *  splineInterpolatorsY[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints)
+                        +    splineInterpolatorsZ[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints) *  splineInterpolatorsZ[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints);
+                if(minVel > sqrt(vel))
+                    minVel = sqrt(vel);
+                if(maxVel < sqrt(vel))
+                    maxVel = sqrt(vel);
 
-            double accel = splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2) *  splineInterpolatorsX[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2)
-                    +      splineInterpolatorsY[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2) *  splineInterpolatorsY[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2)
-                    +      splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2) *  splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec, 2);
-            if(minAccel > accel)
-                minAccel = accel;
-            if(maxAccel < accel)
-                maxAccel= accel;
+                double accel = splineInterpolatorsX[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints) *  splineInterpolatorsX[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints)
+                        +      splineInterpolatorsY[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints) *  splineInterpolatorsY[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints)
+                        +      splineInterpolatorsZ[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints) *  splineInterpolatorsZ[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints);
+                if(minAccel > accel)
+                    minAccel = accel;
+                if(maxAccel < accel)
+                    maxAccel= accel;
+            }
         }
+        rangeCalculated = true;
     }
 
-    for (size_t s = 0; s < fileLoader->m_data.size() && splineInterpolatorsX[s]->m_moreMinNumber; s++)
+    if(drawPoint)
     {
-        if(drawPoint)
+        /*glPointSize(3);
+        glBegin(GL_POINTS);
+        for( size_t i = 0; i < currValues.size(); i++ )
         {
-            glPointSize(3);
-            glBegin(GL_POINTS);
-            for( size_t i = 0; i <= splineInterpolatorsX[s]->m_size - 1; i++ )
+            if(currValues[i].isBound)
             {
-                glColor3f(1.0,1.0,1.0);
-                glVertex3f(splineInterpolatorsX[s]->m_vec[i], splineInterpolatorsY[s]->m_vec[i], splineInterpolatorsZ[s]->m_vec[i]);
+                double vel = currValues[i].u *  currValues[i].u
+                        +    currValues[i].v *  currValues[i].v
+                        +    currValues[i].w *  currValues[i].w;
+                get_color(sqrt(vel), minVel, maxVel);
+                glVertex3f(currValues[i].x, currValues[i].y, currValues[i].z);
             }
-            glEnd();
         }
+        glEnd();
 
+        glPointSize(7);
+        glBegin(GL_POINTS);
+        glColor3f(1,0,0);
+        int num = 0;
+        glVertex3f(currValues[num].x, currValues[num].y, currValues[num].z);
+        for( size_t i = 0; i <= currValues[num].neighbours.size() - 1; i++ )
+        {
+            glColor3f(0, 0.2 + i * 0.8 /(currValues[num].neighbours.size()-1),0);
+            glVertex3f(currValues[currValues[num].neighbours[i]].x, currValues[currValues[num].neighbours[i]].y, currValues[currValues[num].neighbours[i]].z);
+        }
+        glEnd();*/
+        /*double minP=1e10;
+        double maxP=-1e10;
+        for (size_t s = 0; s < fileLoader->m_p.size(); s+=100)
+        {
+            if(!splineInterpolatorsX[s]->m_moreMinNumber)
+                continue;
+            for( size_t i = 0; i < fileLoader->m_p[s].p.size(); i++ )
+            {
+                if(currTime == fileLoader->m_p[s].t[i])
+                {
+                    minP = min(minP, fileLoader->m_p[s].p[i]);
+                    maxP = max(maxP, fileLoader->m_p[s].p[i]);
+                }
+            }
+        }*/
+        /*glPointSize(3);
+        glBegin(GL_POINTS);
+        for (size_t s = 0; s < fileLoader->m_p.size(); s+=100)
+        {
+            if(!splineInterpolatorsX[s]->m_moreMinNumber)
+                continue;
+            for( size_t i = 0; i < fileLoader->m_p[s].p.size(); i++ )
+            {
+                //if(currTime == fileLoader->m_p[s].t[i])
+                {
+                    get_color(fileLoader->m_p[s].p[i], minP, maxP);
+                    glVertex3f(fileLoader->m_data[s].x[i], fileLoader->m_data[s].y[i], fileLoader->m_data[s].z[i]);
+                }
+            }
+        }
+        glEnd();*/
+
+        glPointSize(5);
+        glBegin(GL_POINTS);
+        for (size_t s = 0; s < fileLoader->m_vel.size(); s+=100)
+        {
+            if(!splineInterpolatorsX[s]->m_moreMinNumber)
+                continue;
+            for( size_t i = 0; i < fileLoader->m_vel[s].x.size(); i++ )
+            {
+                //if(currTime == fileLoader->m_p[s].t[i])
+                {
+                    double vel = fileLoader->m_vel[s].x.size() * fileLoader->m_vel[s].x.size()
+                            + fileLoader->m_vel[s].y.size() * fileLoader->m_vel[s].y.size()
+                            + fileLoader->m_vel[s].z.size() * fileLoader->m_vel[s].z.size();
+                    get_color(sqrt(vel), minVel, maxVel);
+                    glVertex3f(fileLoader->m_data[s].x[i], fileLoader->m_data[s].y[i], fileLoader->m_data[s].z[i]);
+                }
+            }
+        }
+        glEnd();
+
+    }
+
+
+
+    for (size_t s = 0; s < fileLoader->m_splinesCount; s+=drawSplineStep)
+    {
+        if(!splineInterpolatorsX[s]->m_moreMinNumber)
+            continue;
         if(drawLineSeg)
         {
             glLineWidth(2);
             glBegin(GL_LINE_STRIP);
-            for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+            for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i+=drawPointStep )
             {
                 glColor3f(1.0,1.0,1.0);
                 glVertex3f(splineInterpolatorsX[s]->m_vec[i], splineInterpolatorsY[s]->m_vec[i], splineInterpolatorsZ[s]->m_vec[i]);
@@ -635,32 +172,15 @@ void display(void)
         }
         if(drawSpline)
         {
-            /*glLineWidth(3);
+            glLineWidth(1);
             glBegin(GL_LINE_STRIP);
             for( size_t i=0; i<=numSplinePoints; i++ )
             {
                 double vel = splineInterpolatorsX[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints) *  splineInterpolatorsX[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints)
                         +    splineInterpolatorsY[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints) *  splineInterpolatorsY[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints)
                         +    splineInterpolatorsZ[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints) *  splineInterpolatorsZ[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints);
-                get_color(vel, minVel, maxVel);
+                get_color(sqrt(vel), minVel, maxVel);
                 glVertex3f(splineInterpolatorsX[s]->getCoord(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numSplinePoints), splineInterpolatorsY[s]->getCoord(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numSplinePoints), splineInterpolatorsZ[s]->getCoord(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numSplinePoints));
-            }
-            glEnd();*/
-            glPointSize(5);
-            glBegin(GL_POINTS);
-            glColor3f(0.0,1,0);
-            //glVertex3f(splineInterpolatorsX[s]->getCoord(0), splineInterpolatorsY[s]->getCoord(0), splineInterpolatorsZ[s]->getCoord(0));
-            glVertex3f(splineInterpolatorsX[s]->getCoord(splineInterpolatorsX[s]->m_size - 1), splineInterpolatorsY[s]->getCoord(splineInterpolatorsX[s]->m_size - 1), splineInterpolatorsZ[s]->getCoord(splineInterpolatorsX[s]->m_size - 1));
-            glEnd();
-            glLineWidth(3);
-            glBegin(GL_LINE_STRIP);
-            for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
-            {
-                double vecX = splineInterpolatorsX[s]->getVel(i) - fileLoader->m_vel[s].x[i];
-                double vecY = splineInterpolatorsY[s]->getVel(i) - fileLoader->m_vel[s].y[i];
-                double vecZ = splineInterpolatorsZ[s]->getVel(i) - fileLoader->m_vel[s].z[i];
-                glColor3f(vecX * vecX + vecY * vecY + vecZ * vecZ,0.01,0.01);
-                glVertex3f(splineInterpolatorsX[s]->getCoord(i), splineInterpolatorsY[s]->getCoord(i), splineInterpolatorsZ[s]->getCoord(i));
             }
             glEnd();
         }
@@ -673,7 +193,7 @@ void display(void)
                 double vel = splineInterpolatorsX[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec) *  splineInterpolatorsX[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
                         +    splineInterpolatorsY[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec) *  splineInterpolatorsY[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
                         +    splineInterpolatorsZ[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec) *  splineInterpolatorsZ[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec);
-                get_color(vel, minVel, maxVel);
+                get_color(sqrt(vel), minVel, maxVel);
                 glVertex3f(splineInterpolatorsX[s]->getCoord(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec), splineInterpolatorsY[s]->S_(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec), splineInterpolatorsZ[s]->S_(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numVelVec));
                 glVertex3f(splineInterpolatorsX[s]->getCoord(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)   + scale * 5.0 * splineInterpolatorsX[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
                            , splineInterpolatorsY[s]->getCoord(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec) + scale * 5.0 * splineInterpolatorsY[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
@@ -683,7 +203,7 @@ void display(void)
         }
         if(drawAcceleration)
         {
-            glLineWidth(1);
+            glLineWidth(2);
             glBegin(GL_LINES);
             for( size_t i=0; i<=numVelVec; i++)
             {
@@ -692,13 +212,211 @@ void display(void)
                         +      splineInterpolatorsZ[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec) *  splineInterpolatorsZ[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec);
                 get_color(accel, minAccel, maxAccel);
                 glVertex3f( splineInterpolatorsX[s]->getCoord(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec), splineInterpolatorsY[s]->getCoord(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec), splineInterpolatorsZ[s]->getCoord(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numVelVec));
-                glVertex3f( splineInterpolatorsX[s]->getCoord(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)  + scale * 30.0 * splineInterpolatorsX[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
-                            ,splineInterpolatorsY[s]->getCoord(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec) + scale * 30.0 * splineInterpolatorsY[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
-                            ,splineInterpolatorsZ[s]->getCoord(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numVelVec) + scale * 30.0 * splineInterpolatorsZ[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec));
+                glVertex3f( splineInterpolatorsX[s]->getCoord(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)  + scale * splineInterpolatorsX[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
+                            ,splineInterpolatorsY[s]->getCoord(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec) + scale * splineInterpolatorsY[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
+                            ,splineInterpolatorsZ[s]->getCoord(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numVelVec) + scale * splineInterpolatorsZ[s]->getAccel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec));
             }
             glEnd();
         }
     }
+    if(drawGridVel)
+    {
+        for( int k=0; k < min(kNum, NZ); k+=1)
+        {
+            for( int i=0; i<min(iNum, NX)-1; i+=1)
+            {
+                glBegin(GL_TRIANGLE_STRIP);
+                for( int j=0; j< min(jNum, NY); j+=1)
+                {
+                    double vel = fileLoader->m_velField[0][i][j][k] * fileLoader->m_velField[0][i][j][k]
+                            +    fileLoader->m_velField[1][i][j][k] * fileLoader->m_velField[1][i][j][k]
+                            +    fileLoader->m_velField[2][i][j][k] * fileLoader->m_velField[2][i][j][k];
+                    get_color(scale * vel, minVel, maxVel);
+                    glVertex3f(x0_ + (x1_-x0_) * (i) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * k * 1.0 / NZ);
+
+                    double velip = fileLoader->m_velField[0][i+1][j][k] * fileLoader->m_velField[0][i+1][j][k]
+                            +      fileLoader->m_velField[1][i+1][j][k] * fileLoader->m_velField[1][i+1][j][k]
+                            +      fileLoader->m_velField[2][i+1][j][k] * fileLoader->m_velField[2][i+1][j][k];
+                    get_color(scale * velip, minVel, maxVel);
+                    glVertex3f(x0_ + (x1_-x0_) * (i+1) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * k * 1.0 / NZ);
+                }
+                glEnd();
+            }
+        }
+        for( int i=0; i<min(iNum, NX); i+=1)
+        {
+            for( int k=0; k < min(kNum, NZ)-1; k+=1)
+            {
+                glBegin(GL_TRIANGLE_STRIP);
+                for( int j=0; j<min(jNum, NY); j+=1)
+                {
+                    double vel = fileLoader->m_velField[0][i][j][k] * fileLoader->m_velField[0][i][j][k]
+                            +    fileLoader->m_velField[1][i][j][k] * fileLoader->m_velField[1][i][j][k]
+                            +    fileLoader->m_velField[2][i][j][k] * fileLoader->m_velField[2][i][j][k];
+                    get_color(scale * vel, minVel, maxVel);
+                    glVertex3f(x0_ + (x1_-x0_) * (i) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * (k) * 1.0 / NZ);
+
+                    double velkp = fileLoader->m_velField[0][i][j][k+1] * fileLoader->m_velField[0][i][j][k+1]
+                            +      fileLoader->m_velField[1][i][j][k+1] * fileLoader->m_velField[1][i][j][k+1]
+                            +      fileLoader->m_velField[2][i][j][k+1] * fileLoader->m_velField[2][i][j][k+1];
+                    get_color(scale * velkp, minVel, maxVel);
+                    glVertex3f(x0_ + (x1_-x0_) * (i) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * (k+1) * 1.0 / NZ);
+                }
+                glEnd();
+            }
+        }
+        for( int j=0; j<min(jNum, NY); j+=1)
+        {
+            for( int i=0; i<min(iNum, NX)-1; i+=1)
+            {
+                glBegin(GL_TRIANGLE_STRIP);
+                for( int k=0; k < min(kNum, NZ); k+=1)
+                {
+                    double vel = fileLoader->m_velField[0][i][j][k] * fileLoader->m_velField[0][i][j][k]
+                            +    fileLoader->m_velField[1][i][j][k] * fileLoader->m_velField[1][i][j][k]
+                            +    fileLoader->m_velField[2][i][j][k] * fileLoader->m_velField[2][i][j][k];
+                    get_color(scale * vel, minVel, maxVel);
+                    glVertex3f(x0_ + (x1_-x0_) * (i) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * (k) * 1.0 / NZ);
+
+                    double velip = fileLoader->m_velField[0][i+1][j][k] * fileLoader->m_velField[0][i+1][j][k]
+                            +      fileLoader->m_velField[1][i+1][j][k] * fileLoader->m_velField[1][i+1][j][k]
+                            +      fileLoader->m_velField[2][i+1][j][k] * fileLoader->m_velField[2][i+1][j][k];
+                    get_color(scale * velip, minVel, maxVel);
+                    glVertex3f(x0_ + (x1_-x0_) * (i+1) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * (k) * 1.0 / NZ);
+                }
+                glEnd();
+            }
+        }
+    }
+
+    if(drawGridAccel)
+    {
+        for( int k=0; k < min(kNum, NZ); k+=1)
+        {
+            for( int i=0; i<min(iNum, NX)-1; i+=1)
+            {
+                glBegin(GL_TRIANGLE_STRIP);
+                for( int j=0; j< min(jNum, NY); j+=1)
+                {
+                    double accel = fileLoader->m_accelField[0][i][j][k] * fileLoader->m_accelField[0][i][j][k]
+                            +    fileLoader->m_accelField[1][i][j][k] * fileLoader->m_accelField[1][i][j][k]
+                            +    fileLoader->m_accelField[2][i][j][k] * fileLoader->m_accelField[2][i][j][k];
+                    get_color(scale * accel, minAccel, maxAccel);
+                    glVertex3f(x0_ + (x1_-x0_) * (i) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * k * 1.0 / NZ);
+
+                    double accelip = fileLoader->m_accelField[0][i+1][j][k] * fileLoader->m_accelField[0][i+1][j][k]
+                            +      fileLoader->m_accelField[1][i+1][j][k] * fileLoader->m_accelField[1][i+1][j][k]
+                            +      fileLoader->m_accelField[2][i+1][j][k] * fileLoader->m_accelField[2][i+1][j][k];
+                    get_color(scale * accelip, minAccel, maxAccel);
+                    glVertex3f(x0_ + (x1_-x0_) * (i+1) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * k * 1.0 / NZ);
+                }
+                glEnd();
+            }
+        }
+        for( int i=0; i<min(iNum, NX); i+=1)
+        {
+            for( int k=0; k < min(kNum, NZ)-1; k+=1)
+            {
+                glBegin(GL_TRIANGLE_STRIP);
+                for( int j=0; j<min(jNum, NY); j+=1)
+                {
+                    double accel = fileLoader->m_accelField[0][i][j][k] * fileLoader->m_accelField[0][i][j][k]
+                            +    fileLoader->m_accelField[1][i][j][k] * fileLoader->m_accelField[1][i][j][k]
+                            +    fileLoader->m_accelField[2][i][j][k] * fileLoader->m_accelField[2][i][j][k];
+                    get_color(scale * accel, minAccel, maxAccel);
+                    glVertex3f(x0_ + (x1_-x0_) * (i) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * (k) * 1.0 / NZ);
+
+                    double accelkp = fileLoader->m_accelField[0][i][j][k+1] * fileLoader->m_accelField[0][i][j][k+1]
+                            +      fileLoader->m_accelField[1][i][j][k+1] * fileLoader->m_accelField[1][i][j][k+1]
+                            +      fileLoader->m_accelField[2][i][j][k+1] * fileLoader->m_accelField[2][i][j][k+1];
+                    get_color(scale * accelkp, minAccel, maxAccel);
+                    glVertex3f(x0_ + (x1_-x0_) * (i) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * (k+1) * 1.0 / NZ);
+                }
+                glEnd();
+            }
+        }
+        for( int j=0; j<min(jNum, NY); j+=1)
+        {
+            for( int i=0; i<min(iNum, NX)-1; i+=1)
+            {
+                glBegin(GL_TRIANGLE_STRIP);
+                for( int k=0; k < min(kNum, NZ); k+=1)
+                {
+                    double accel = fileLoader->m_accelField[0][i][j][k] * fileLoader->m_accelField[0][i][j][k]
+                            +    fileLoader->m_accelField[1][i][j][k] * fileLoader->m_accelField[1][i][j][k]
+                            +    fileLoader->m_accelField[2][i][j][k] * fileLoader->m_accelField[2][i][j][k];
+                    get_color(scale * accel, minAccel, maxAccel);
+                    glVertex3f(x0_ + (x1_-x0_) * (i) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * (k) * 1.0 / NZ);
+
+                    double accelip = fileLoader->m_accelField[0][i+1][j][k] * fileLoader->m_accelField[0][i+1][j][k]
+                            +      fileLoader->m_accelField[1][i+1][j][k] * fileLoader->m_accelField[1][i+1][j][k]
+                            +      fileLoader->m_accelField[2][i+1][j][k] * fileLoader->m_accelField[2][i+1][j][k];
+                    get_color(scale * accelip, minAccel, maxAccel);
+                    glVertex3f(x0_ + (x1_-x0_) * (i+1) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * (k) * 1.0 / NZ);
+                }
+                glEnd();
+            }
+        }
+    }
+
+    if(drawGridPressure)
+    {
+        for( int k=0; k < min(kNum, NZ); k+=1)
+        {
+            for( int i=0; i<min(iNum, NX)-1; i+=1)
+            {
+                glBegin(GL_TRIANGLE_STRIP);
+                for( int j=0; j< min(jNum, NY); j+=1)
+                {
+                    double pressure = fileLoader->m_pressureField[i][j][k];
+                    get_color(scale * pressure, minPressure, maxPressure);
+                    glVertex3f(x0_ + (x1_-x0_) * (i) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * k * 1.0 / NZ);
+
+                    double pressureip = fileLoader->m_pressureField[i+1][j][k];
+                    get_color(scale * pressureip, minPressure, maxPressure);
+                    glVertex3f(x0_ + (x1_-x0_) * (i+1) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * k * 1.0 / NZ);
+                }
+                glEnd();
+            }
+        }
+        for( int i=0; i<min(iNum, NX); i+=1)
+        {
+            for( int k=0; k < min(kNum, NZ)-1; k+=1)
+            {
+                glBegin(GL_TRIANGLE_STRIP);
+                for( int j=0; j<min(jNum, NY); j+=1)
+                {
+                    double pressure =  fileLoader->m_pressureField[i][j][k];
+                    get_color(scale * pressure, minPressure, maxPressure);
+                    glVertex3f(x0_ + (x1_-x0_) * (i) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * (k) * 1.0 / NZ);
+
+                    double pressurekp =  fileLoader->m_pressureField[i][j][k+1];
+                    get_color(scale * pressurekp, minPressure, maxPressure);
+                    glVertex3f(x0_ + (x1_-x0_) * (i) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * (k+1) * 1.0 / NZ);
+                }
+                glEnd();
+            }
+        }
+        for( int j=0; j<min(jNum, NY); j+=1)
+        {
+            for( int i=0; i<min(iNum, NX)-1; i+=1)
+            {
+                glBegin(GL_TRIANGLE_STRIP);
+                for( int k=0; k < min(kNum, NZ); k+=1)
+                {
+                    double pressure =  fileLoader->m_pressureField[i][j][k];
+                    get_color(scale * pressure, minPressure, maxPressure);
+                    glVertex3f(x0_ + (x1_-x0_) * (i) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * (k) * 1.0 / NZ);
+
+                    double pressureip =  fileLoader->m_pressureField[i+1][j][k];
+                    get_color(scale * pressureip, minPressure, maxPressure);
+                    glVertex3f(x0_ + (x1_-x0_) * (i+1) * 1.0 / NX,   y0_ + (y1_-y0_) * (j) * 1.0 / NY,   z0_ + (z1_-z0_) * (k) * 1.0 / NZ);
+                }
+                glEnd();
+            }
+        }
+    }
+
 
     glutSwapBuffers();
     if (redr==1) glutPostRedisplay();
@@ -733,10 +451,22 @@ void m_d(int button, int state,int x, int y)
     glutPostRedisplay();
 }
 
+double loadSettings()
+{
+    char name[5000];
+    char name1[5000];
+    FILE *file_data=fopen("settings.txt", "r");
+    fscanf(file_data,"%s %s",&name, &name1);
+    fclose(file_data);
+    return 0;
+}
+
 void threadOptimize(int threadIdx, int startIdx, int endIdx)
 {
     for (int s = startIdx; s < endIdx; s++)
     {
+        if(!splineInterpolatorsX[s]->m_moreMinNumber)
+            continue;
         isNoOptimized[threadIdx] += splineInterpolatorsX[s]->optimizeByGrad(1);
         isNoOptimized[threadIdx] += splineInterpolatorsY[s]->optimizeByGrad(1);
         isNoOptimized[threadIdx] += splineInterpolatorsZ[s]->optimizeByGrad(1);
@@ -745,52 +475,523 @@ void threadOptimize(int threadIdx, int startIdx, int endIdx)
 
 void calcEfficient()
 {
-    double averPosError = 0.0;
-    double averVelError = 0.0;
-    double averAccelError = 0.0;
-    double meanVel = 0.0;
-    int number = 0;
-    int numToSkip = 1;
-    for (size_t s = 0; s < fileLoader->m_data.size() /*&& splineInterpolatorsX[s]->m_moreMinNumber*/; s++)
+    for (size_t numToSkip = 0; numToSkip < 4; numToSkip++)
     {
-        for( size_t i = numToSkip; i < splineInterpolatorsX[s]->m_size - numToSkip; i++ )
+        double averPosError = 0.0;
+        double averVelError = 0.0;
+        double averAccelError = 0.0;
+        double meanVel = 0.0;
+        int number = 0;
+        for (size_t s = 0; s < fileLoader->m_splinesCount; s++)
         {
-            double posX = splineInterpolatorsX[s]->getCoord(i) - fileLoader->m_data[s].x[i];
-            double posY = splineInterpolatorsY[s]->getCoord(i) - fileLoader->m_data[s].y[i];
-            double posZ = splineInterpolatorsZ[s]->getCoord(i) - fileLoader->m_data[s].z[i];
-            averPosError += posX * posX + posY * posY + posZ * posZ;
+            if(!splineInterpolatorsX[s]->m_moreMinNumber)
+                continue;
+            for( size_t i = numToSkip; i < splineInterpolatorsX[s]->m_size - numToSkip; i++ )
+            {
+                double posX = splineInterpolatorsX[s]->getCoord(i) - fileLoader->m_data[s].x[i];
+                double posY = splineInterpolatorsY[s]->getCoord(i) - fileLoader->m_data[s].y[i];
+                double posZ = splineInterpolatorsZ[s]->getCoord(i) - fileLoader->m_data[s].z[i];
+                averPosError += posX * posX + posY * posY + posZ * posZ;
 
-            double vecX = splineInterpolatorsX[s]->getVel(i) - fileLoader->m_vel[s].x[i];
-            double vecY = splineInterpolatorsY[s]->getVel(i) - fileLoader->m_vel[s].y[i];
-            double vecZ = splineInterpolatorsZ[s]->getVel(i) - fileLoader->m_vel[s].z[i];
-            averVelError += vecX * vecX + vecY * vecY + vecZ * vecZ;
-            meanVel+=sqrt(fileLoader->m_vel[s].x[i]*fileLoader->m_vel[s].x[i] + fileLoader->m_vel[s].y[i]*fileLoader->m_vel[s].y[i] + fileLoader->m_vel[s].z[i]*fileLoader->m_vel[s].z[i]);
+                double vecX = splineInterpolatorsX[s]->getVel(i) - fileLoader->m_vel[s].x[i];
+                double vecY = splineInterpolatorsY[s]->getVel(i) - fileLoader->m_vel[s].y[i];
+                double vecZ = splineInterpolatorsZ[s]->getVel(i) - fileLoader->m_vel[s].z[i];
+                averVelError += vecX * vecX + vecY * vecY + vecZ * vecZ;
+                meanVel+=sqrt(fileLoader->m_vel[s].x[i]*fileLoader->m_vel[s].x[i] + fileLoader->m_vel[s].y[i]*fileLoader->m_vel[s].y[i] + fileLoader->m_vel[s].z[i]*fileLoader->m_vel[s].z[i]);
 
 
-            double accelX = splineInterpolatorsX[s]->getAccel(i) - fileLoader->m_accel[s].x[i];
-            double accelY = splineInterpolatorsY[s]->getAccel(i) - fileLoader->m_accel[s].y[i];
-            double accelZ = splineInterpolatorsZ[s]->getAccel(i) - fileLoader->m_accel[s].z[i];
-            averAccelError += accelX * accelX + accelY * accelY + accelZ * accelZ;
+                double accelX = splineInterpolatorsX[s]->getAccel(i) - fileLoader->m_accel[s].x[i];
+                double accelY = splineInterpolatorsY[s]->getAccel(i) - fileLoader->m_accel[s].y[i];
+                double accelZ = splineInterpolatorsZ[s]->getAccel(i) - fileLoader->m_accel[s].z[i];
+                averAccelError += accelX * accelX + accelY * accelY + accelZ * accelZ;
 
-            number++;
+                number++;
+            }
+        }
+        printf("skip=%d DiffVel = %f DiffAccel = %f DiffPos = %f \n", numToSkip, sqrt(averVelError/number),sqrt(averAccelError/number),sqrt(averPosError/number));
+    }
+}
+
+void interpolateInGrid()
+{
+    printf("Intarpolation started\n");
+    for( int xyz=0; xyz<3; xyz+=1)
+        for( int i=0; i<NX; i+=1)
+            for( int j=0; j<NY; j+=1)
+                for( int k=0; k<NZ; k+=1)
+                {
+                    fileLoader->m_numInCell[i][j][k]=0;
+                    fileLoader->m_velField[xyz][i][j][k]=0.0;
+                    fileLoader->m_accelField[xyz][i][j][k]=0.0;
+                }
+
+    for (size_t i = 0; i < currValues.size(); i++)
+    {
+        int xIdx = int((currValues[i].x - x0_)/dx);
+        int yIdx = int((currValues[i].y - y0_)/dy);
+        int zIdx = int((currValues[i].z - z0_)/dz);
+        fileLoader->m_velField[0][xIdx][yIdx][zIdx] += currValues[i].u ;
+        fileLoader->m_velField[1][xIdx][yIdx][zIdx] += currValues[i].v ;
+        fileLoader->m_velField[2][xIdx][yIdx][zIdx] += currValues[i].w ;
+        fileLoader->m_accelField[0][xIdx][yIdx][zIdx] += currValues[i].ax ;
+        fileLoader->m_accelField[1][xIdx][yIdx][zIdx] += currValues[i].ay ;
+        fileLoader->m_accelField[2][xIdx][yIdx][zIdx] += currValues[i].az ;
+        fileLoader->m_numInCell[xIdx][yIdx][zIdx]++;
+    }
+    for( int i=0; i<NX; i+=1)
+        for( int j=0; j<NY; j+=1)
+            for( int k = 0; k < NZ; k+=1)
+                for( int xyz=0; xyz<3; xyz+=1)
+                {
+                    if(fileLoader->m_numInCell[i][j][k] != 0)
+                    {
+                        fileLoader->m_velField[xyz][i][j][k] /= fileLoader->m_numInCell[i][j][k];
+                        fileLoader->m_accelField[xyz][i][j][k] /= fileLoader->m_numInCell[i][j][k];
+                    }
+                    fileLoader->m_velFieldCurr[xyz][i][j][k] = fileLoader->m_velField[xyz][i][j][k];
+                    fileLoader->m_accelFieldCurr[xyz][i][j][k] = fileLoader->m_accelField[xyz][i][j][k];
+
+                }
+    printf("Intarpolation finished\n");
+}
+
+void average(int iter)
+{
+    printf("Average started\n");
+
+    for( size_t tt=0; tt < iter; tt++ )
+    {
+        for( int xyz=0; xyz<3; xyz+=1)
+            for( int i=1; i<NX-1; i+=1)
+                for( int j=1; j<NY-1; j+=1)
+                    for( int k = 1; k < NZ-1; k+=1)
+                    {
+                        if(fileLoader->m_velFieldCurr[xyz][i][j][k] > 1e-7)
+                            fileLoader->m_velField[xyz][i][j][k] = fileLoader->m_velFieldCurr[xyz][i][j][k];
+                        if(fileLoader->m_accelFieldCurr[xyz][i][j][k] > 1e-7)
+                            fileLoader->m_accelField[xyz][i][j][k] = fileLoader->m_accelFieldCurr[xyz][i][j][k];
+                    }
+
+        for( int xyz=0; xyz<3; xyz+=1)
+            for( int i=1; i<NX-1; i+=1)
+                for( int j=1; j<NY-1; j+=1)
+                    for( int k = 1; k < NZ-1; k+=1)
+                    {
+                        fileLoader->m_velFieldFiltered[xyz][i][j][k] = (fileLoader->m_velField[xyz][i][j][k]
+                                                                        + fileLoader->m_velField[xyz][i+1][j][k]
+                                + fileLoader->m_velField[xyz][i-1][j][k]
+                                + fileLoader->m_velField[xyz][i][j+1][k]
+                                + fileLoader->m_velField[xyz][i][j-1][k]
+                                + fileLoader->m_velField[xyz][i][j][k+1]
+                                + fileLoader->m_velField[xyz][i][j][k-1])/7.0;
+                        fileLoader->m_accelFieldFiltered[xyz][i][j][k] = (fileLoader->m_accelField[xyz][i][j][k]
+                                                                          + fileLoader->m_accelField[xyz][i+1][j][k]
+                                + fileLoader->m_accelField[xyz][i-1][j][k]
+                                + fileLoader->m_accelField[xyz][i][j+1][k]
+                                + fileLoader->m_accelField[xyz][i][j-1][k]
+                                + fileLoader->m_accelField[xyz][i][j][k+1]
+                                + fileLoader->m_accelField[xyz][i][j][k-1])/7.0;
+                    }
+
+        for( int xyz=0; xyz<3; xyz+=1)
+            for( int i=1; i<NX-1; i+=1)
+                for( int j=1; j<NY-1; j+=1)
+                    for( int k = 1; k < NZ-1; k+=1)
+                    {
+                        fileLoader->m_velField[xyz][i][j][k] = (fileLoader->m_velFieldFiltered[xyz][i][j][k]
+                                                                + fileLoader->m_velFieldFiltered[xyz][i+1][j][k]
+                                + fileLoader->m_velFieldFiltered[xyz][i-1][j][k]
+                                + fileLoader->m_velFieldFiltered[xyz][i][j+1][k]
+                                + fileLoader->m_velFieldFiltered[xyz][i][j-1][k]
+                                + fileLoader->m_velFieldFiltered[xyz][i][j][k+1]
+                                + fileLoader->m_velFieldFiltered[xyz][i][j][k-1])/7.0;
+                        fileLoader->m_accelField[xyz][i][j][k] = (fileLoader->m_accelFieldFiltered[xyz][i][j][k]
+                                                                  + fileLoader->m_accelFieldFiltered[xyz][i+1][j][k]
+                                + fileLoader->m_accelFieldFiltered[xyz][i-1][j][k]
+                                + fileLoader->m_accelFieldFiltered[xyz][i][j+1][k]
+                                + fileLoader->m_accelFieldFiltered[xyz][i][j-1][k]
+                                + fileLoader->m_accelFieldFiltered[xyz][i][j][k+1]
+                                + fileLoader->m_accelFieldFiltered[xyz][i][j][k-1])/7.0;
+                    }
+    }
+    printf("Average finished\n");
+}
+
+void updateCurrValues()
+{
+    currValues.clear();
+    for (size_t s = 0; s < fileLoader->m_splinesCount; s++)
+    {
+        if(!splineInterpolatorsX[s]->m_moreMinNumber)
+            continue;
+        for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+        {
+            if(currTime == splineInterpolatorsX[s]->m_time[i])
+                currValues.push_back(posVelAccel(splineInterpolatorsX[s]->getCoord(i), splineInterpolatorsY[s]->getCoord(i), splineInterpolatorsZ[s]->getCoord(i),
+                                                 splineInterpolatorsX[s]->getVel(i), splineInterpolatorsY[s]->getVel(i), splineInterpolatorsZ[s]->getVel(i),
+                                                 splineInterpolatorsX[s]->getAccel(i), splineInterpolatorsY[s]->getAccel(i), splineInterpolatorsZ[s]->getAccel(i)));
         }
     }
-    printf("DiffVel = %f DiffAccel = %f DiffPos = %f \n", sqrt(averVelError/number),sqrt(averAccelError/number),sqrt(averPosError/number));
+}
+
+
+void findNeighbors()
+{
+    double grid_dx = (xmax - xmin) * 1.0 / (NUMCELLS);
+    double grid_dy = (ymax - ymin) * 1.0 / (NUMCELLS);
+    double grid_dz = (zmax - zmin) * 1.0 / (NUMCELLS);
+    double dr = pow(grid_dx*grid_dy*grid_dz,1.0/3)*0.5;
+    for (size_t i = 0; i < NUMCELLS; i++)
+    {
+        for (size_t j = 0; j < NUMCELLS; j++)
+        {
+            for (size_t k = 0; k < NUMCELLS; k++)
+            {
+                particlesGrid[i][j][k].clear();
+            }
+        }
+    }
+    for (int i = 0; i < currValues.size(); i++)
+    {
+        int xIdx = int((currValues[i].x - xmin)/grid_dx);
+        int yIdx = int((currValues[i].y - ymin)/grid_dy);
+        int zIdx = int((currValues[i].z - zmin)/grid_dz);
+        particlesGrid[xIdx][yIdx][zIdx].push_back(i);
+    }
+
+    //find boundary by x
+    for (int i = 0; i < 2 ; i++)
+        for (int j = 0; j < NUMCELLS ; j++)
+            for (int k = 0; k < NUMCELLS; k++)
+            {
+                int iIdx = i == 0 ? 0 : NUMCELLS - 1;
+                int size = particlesGrid[iIdx][j][k].size();
+                if(size == 0)
+                    continue;
+                double length = pow (((grid_dx * grid_dy * grid_dz) * 1.0 / size), 1.0/ 3.0);
+                int targetNumBound = int(size * length / grid_dx);
+
+
+                for (int ii = 0; ii < size - 1; ii++)
+                    for (int jj = 0; jj < size - ii - 1; jj++)
+                        if (currValues[particlesGrid[iIdx][j][k].at(jj)].x > currValues[particlesGrid[iIdx][j][k].at(jj+1)].x)
+                            swap(currValues[particlesGrid[iIdx][j][k].at(jj)], currValues[particlesGrid[iIdx][j][k].at(jj+1)]);
+
+                if(iIdx == 0)
+                    for (int n = 0; n < targetNumBound ; n++)
+                        currValues[particlesGrid[iIdx][j][k].at(n)].isBound = true;
+                else
+                    for (int n = size - 1; n > size - targetNumBound ; n--)
+                        currValues[particlesGrid[iIdx][j][k].at(n)].isBound = true;
+            }
+
+
+    /*//find boundary by y
+    for (int i = 0; i < NUMCELLS ; i++)
+        for (int j = 0; j < 2 ; j++)
+            for (int k = 0; k < NUMCELLS; k++)
+            {
+                int jIdx = j == 0 ? 0 : NUMCELLS - 1;
+                int size = particlesGrid[i][jIdx][k].size();
+                if(size == 0)
+                    continue;
+                double length = pow (((grid_dx * grid_dy * grid_dz) * 1.0 / size), 1.0/ 3.0);
+                int targetNumBound = int(size * length / grid_dy);
+
+
+                for (int ii = 0; ii < size - 1; ii++)
+                    for (int jj = 0; jj < size - ii - 1; jj++)
+                        if (currValues[particlesGrid[i][jIdx][k].at(jj)].y > currValues[particlesGrid[i][jIdx][k].at(jj+1)].y)
+                            swap(currValues[particlesGrid[i][jIdx][k].at(jj)], currValues[particlesGrid[i][jIdx][k].at(jj+1)]);
+
+                if(jIdx == 0)
+                    for (int n = 0; n < targetNumBound ; n++)
+                        currValues[particlesGrid[i][jIdx][k].at(n)].isBound = true;
+                else
+                    for (int n = size - 1; n > size - targetNumBound ; n--)
+                        currValues[particlesGrid[i][jIdx][k].at(n)].isBound = true;
+            }*/
+
+    //find boundary by z
+    for (int i = 0; i < NUMCELLS ; i++)
+        for (int j = 0; j < NUMCELLS ; j++)
+            for (int k = 0; k < 2; k++)
+            {
+                int kIdx = k == 0 ? 0 : NUMCELLS - 1;
+                int size = particlesGrid[i][j][kIdx].size();
+                if(size == 0)
+                    continue;
+                double length = pow (((grid_dx * grid_dy * grid_dz) * 1.0 / size), 1.0/ 3.0);
+                int targetNumBound = int(size * length / grid_dz);
+
+
+                for (int ii = 0; ii < size - 1; ii++)
+                    for (int jj = 0; jj < size - ii - 1; jj++)
+                        if (currValues[particlesGrid[i][j][kIdx].at(jj)].z > currValues[particlesGrid[i][j][kIdx].at(jj+1)].z)
+                            swap(currValues[particlesGrid[i][j][kIdx].at(jj)], currValues[particlesGrid[i][j][kIdx].at(jj+1)]);
+
+                if(kIdx == 0)
+                    for (int n = 0; n < targetNumBound ; n++)
+                        currValues[particlesGrid[i][j][kIdx].at(n)].isBound = true;
+                else
+                    for (int n = size - 1; n > size - targetNumBound ; n--)
+                        currValues[particlesGrid[i][j][kIdx].at(n)].isBound = true;
+            }
+
+
+    for (int s = 0; s < currValues.size(); s++)
+    {
+
+        currValues[s].neighbours.clear();
+        int xIdx = int((currValues[s].x - xmin)/grid_dx);
+        int yIdx = int((currValues[s].y - ymin)/grid_dy);
+        int zIdx = int((currValues[s].z - zmin)/grid_dz);
+        int im = max(0, xIdx-1);
+        int ip = min(NUMCELLS - 1, xIdx+1);
+        int jm = max(0, yIdx-1);
+        int jp = min(NUMCELLS - 1, yIdx+1);
+        int km = max(0, zIdx-1);
+        int kp = min(NUMCELLS - 1, zIdx+1);
+
+        for (int i = im; i <= ip ; i++)
+            for (int j = jm; j <=jp; j++)
+                for (int k = km; k <=kp; k++)
+                    for(int n = 0; n < particlesGrid[i][j][k].size(); n++)
+                    {
+                        if(i == particlesGrid[i][j][k][n])
+                            continue;
+                        double r2 = (currValues[s].x - currValues[particlesGrid[i][j][k].at(n)].x) * (currValues[s].x - currValues[particlesGrid[i][j][k].at(n)].x)
+                                +   (currValues[s].y - currValues[particlesGrid[i][j][k].at(n)].y) * (currValues[s].y - currValues[particlesGrid[i][j][k].at(n)].y)
+                                +   (currValues[s].z - currValues[particlesGrid[i][j][k].at(n)].z) * (currValues[s].z - currValues[particlesGrid[i][j][k].at(n)].z);
+                        if(r2 < dr * dr)
+                        {
+                            currValues[s].neighbours.push_back(particlesGrid[i][j][k].at(n));
+                        }
+                    }
+
+        for (int i = 0; i < currValues[s].neighbours.size() - 1; i++)
+            for (int j = 0; j < currValues[s].neighbours.size() - i - 1; j++)
+            {
+                double r1 = (currValues[s].x - currValues[currValues[s].neighbours.at(j)].x) * (currValues[s].x - currValues[currValues[s].neighbours.at(j)].x)
+                        +   (currValues[s].y - currValues[currValues[s].neighbours.at(j)].y) * (currValues[s].y - currValues[currValues[s].neighbours.at(j)].y)
+                        +   (currValues[s].z - currValues[currValues[s].neighbours.at(j)].z) * (currValues[s].z - currValues[currValues[s].neighbours.at(j)].z);
+                double r2 = (currValues[s].x - currValues[currValues[s].neighbours.at(j+1)].x) * (currValues[s].x - currValues[currValues[s].neighbours.at(j+1)].x)
+                        +   (currValues[s].y - currValues[currValues[s].neighbours.at(j+1)].y) * (currValues[s].y - currValues[currValues[s].neighbours.at(j+1)].y)
+                        +   (currValues[s].z - currValues[currValues[s].neighbours.at(j+1)].z) * (currValues[s].z - currValues[currValues[s].neighbours.at(j+1)].z);
+                if (r1 > r2)
+                    swap(currValues[s].neighbours.at(j), currValues[s].neighbours.at(j+1));
+            }
+    }
 }
 
 void saveInFile()
 {
-    for (size_t s = 0; s < fileLoader->m_data.size() /*&& splineInterpolatorsX[s]->m_moreMinNumber*/; s++)
+
+    /*for (size_t s = 0; s < fileLoader->m_splinesCount; s++)
     {
-        FILE *file_data=fopen(fileLoader->m_fileNames[s],"w");
+        if(!splineInterpolatorsX[s]->m_moreMinNumber)
+            continue;
+        char filename[64];
+        //mkdir("output");
+        //sprintf(filename, "output/splines%d_%d.txt", s, splineInterpolatorsX[s]->m_size);
+
+        //mkdir("outputNoisyTracksFreeEnds");
+        //mkdir("outputNoisyTracksZeroVelDeriv");
+        //mkdir("outputNoisyTracksZeroAccelDeriv");
+        mkdir("outputNoisyTracksFreeEnds");
+        sprintf(filename, "outputNoisyTracksFreeEnds/splines%d_%d.txt", s, splineInterpolatorsX[s]->m_size);
+        FILE *file_data=fopen(filename,"w");
         for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
         {
-                fprintf(file_data,"%lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf\n", splineInterpolatorsX[s]->getCoord(i), splineInterpolatorsY[s]->getCoord(i), splineInterpolatorsZ[s]->getCoord(i)
+            fprintf(file_data,"%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\n", fileLoader->m_data[s].x[i], fileLoader->m_data[s].y[i], fileLoader->m_data[s].z[i]
+                    , splineInterpolatorsX[s]->getCoord(i), splineInterpolatorsY[s]->getCoord(i), splineInterpolatorsZ[s]->getCoord(i)
+                    , fileLoader->m_vel[s].x[i], fileLoader->m_vel[s].y[i], fileLoader->m_vel[s].z[i]
+                    , splineInterpolatorsX[s]->getVel(i), splineInterpolatorsY[s]->getVel(i), splineInterpolatorsZ[s]->getVel(i)
+                    , fileLoader->m_accel[s].x[i], fileLoader->m_accel[s].y[i], fileLoader->m_accel[s].z[i]
+                    , splineInterpolatorsX[s]->getAccel(i), splineInterpolatorsY[s]->getAccel(i), splineInterpolatorsZ[s]->getAccel(i));
+        }
+        fclose(file_data);
+    }
+    printf("Saving done\n");*/
+
+    /*for (size_t s = 0; s < fileLoader->m_splinesCount; s++)
+    {
+        if(!splineInterpolatorsX[s]->m_moreMinNumber)
+            continue;
+        char filename[64];
+        sprintf(filename, "output/splines%d_%d.txt", s, splineInterpolatorsX[s]->m_size);
+        FILE *file_data=fopen(filename,"w");
+        for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+        {
+            fprintf(file_data,"%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\n", fileLoader->m_data[s].x[i], fileLoader->m_data[s].y[i], fileLoader->m_data[s].z[i]
+                    , splineInterpolatorsX[s]->getCoord(i), splineInterpolatorsY[s]->getCoord(i), splineInterpolatorsZ[s]->getCoord(i)
+                    , splineInterpolatorsX[s]->getVel(i), splineInterpolatorsY[s]->getVel(i), splineInterpolatorsZ[s]->getVel(i)
+                    , splineInterpolatorsX[s]->getAccel(i), splineInterpolatorsY[s]->getAccel(i), splineInterpolatorsZ[s]->getAccel(i));
+        }
+        fclose(file_data);
+    }
+    printf("Saving done\n");*/
+    printf("Saving particles in time %d/%d", currTime, fileLoader->m_timeStepCount);
+    char filename[64];
+    sprintf(filename, "particles%d_%d.txt", currTime, fileLoader->m_timeStepCount);
+    FILE *file_data=fopen(filename,"w");
+    for (size_t s = 0; s < fileLoader->m_splinesCount; s++)
+    {
+        for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+        {
+            if(currTime == splineInterpolatorsX[s]->m_time[i])
+            {
+                fprintf(file_data,"%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\n", fileLoader->m_data[s].x[i], fileLoader->m_data[s].y[i], fileLoader->m_data[s].z[i]
                         , splineInterpolatorsX[s]->getCoord(i), splineInterpolatorsY[s]->getCoord(i), splineInterpolatorsZ[s]->getCoord(i)
                         , splineInterpolatorsX[s]->getVel(i), splineInterpolatorsY[s]->getVel(i), splineInterpolatorsZ[s]->getVel(i)
                         , splineInterpolatorsX[s]->getAccel(i), splineInterpolatorsY[s]->getAccel(i), splineInterpolatorsZ[s]->getAccel(i));
+            }
         }
-            fclose(file_data);
+    }
+    fclose(file_data);
+}
+
+
+
+void calcRHS()
+{
+    int i, j ,k;
+
+    for (k=1;k<NZ-1;k++)
+    {
+        for (j=1;j<NY-1;j++)
+        {
+            for (i=1;i<NX-1;i++)
+            {
+                fileLoader->m_RHS[i][j][k] = -((fileLoader->m_accelField[0][i+1][j][k] - fileLoader->m_accelField[0][i-1][j][k])/(2.0 * dx)
+                        + (fileLoader->m_accelField[1][i][j+1][k] - fileLoader->m_accelField[1][i][j-1][k])/(2.0 * dy)
+                        + (fileLoader->m_accelField[2][i][j][k+1] - fileLoader->m_accelField[2][i][j][k-1])/(2.0 * dz));
+            }
+        }
+    }
+    for (j=1;j<NY-1;j++)
+    {
+        for (k=1;k<NZ-1;k++)
+        {
+            fileLoader->m_RHS[0][j][k]=-fileLoader->m_accelField[0][0][j][k];
+            fileLoader->m_RHS[NX-1][j][k]=-fileLoader->m_accelField[0][NX-1][j][k];
+        }
+    }
+
+    for (i=1;i<NX-1;i++)
+    {
+        for (k=1;k<NZ-1;k++)
+        {
+            fileLoader->m_RHS[i][0][k]=-fileLoader->m_accelField[1][i][0][k];
+            fileLoader->m_RHS[i][NY-1][k]=-fileLoader->m_accelField[1][i][NY-1][k];
+        }
+    }
+
+    for (i=1;i<NX-1;i++)
+    {
+        for (j=1;j<NY-1;j++)
+        {
+            fileLoader->m_RHS[i][j][0]=-fileLoader->m_accelField[2][i][j][0];
+            fileLoader->m_RHS[i][j][NZ-1]=-fileLoader->m_accelField[2][i][j][NZ-1];
+        }
+    }
+}
+
+void calcPressure(int in_) //poisson equation at the cell centers
+{
+    int i,j,k,nn;
+    double a,b,c,d,axb_max;
+    a=dx*dx*2.0*(1.0/(dx*dx)+ 1.0/(dy*dy)+1.0/(dz*dz));
+    b=-1.0*dx*dx/(dx*dx);
+    c=-1.0*dx*dx/(dy*dy);
+    d=-1.0*dx*dx/(dz*dz);
+
+    axb_max=0.0;
+    for (nn=0;nn<in_;nn++)
+    {
+        calcRHS();
+        //neumann bc
+        for (j=1;j<NY-1;j++)
+        {
+            for (k=1;k<NZ-1;k++)
+            {
+                fileLoader->m_pressureField[0][j][k]=ddx_a(fileLoader->m_pressureField,0,j,k,fileLoader->m_RHS[0][j][k]);//0
+                fileLoader->m_pressureField[NX-1][j][k]=ddx_a(fileLoader->m_pressureField,NX-1,j,k,fileLoader->m_RHS[NX-1][j][k]);//0
+            }
+        }
+
+        for (i=1;i<NX-1;i++)
+        {
+            for (k=1;k<NZ-1;k++)
+            {
+                fileLoader->m_pressureField[i][0][k]=ddy_a(fileLoader->m_pressureField,i,0,k,fileLoader->m_RHS[i][0][k]);
+                fileLoader->m_pressureField[i][NY-1][k]=ddy_a(fileLoader->m_pressureField,i,NY-1,k,fileLoader->m_RHS[i][NY-1][k]);
+            }
+        }
+
+        for (i=1;i<NX-1;i++)
+        {
+            for (j=1;j<NY-1;j++)
+            {
+                fileLoader->m_pressureField[i][j][0]=ddz_a(fileLoader->m_pressureField,i,j,0,fileLoader->m_RHS[i][j][0]);//0
+                fileLoader->m_pressureField[i][j][NZ-1]=ddz_a(fileLoader->m_pressureField,i,j,NZ-1,fileLoader->m_RHS[i][j][NZ-1]);//0
+            }
+        }
+
+        for (i=1;i<NX-1;i++)
+        {
+            for (j=1;j<NY-1;j++)
+            {
+                for (k=1;k<NZ-1;k++)
+                {
+                    double d2phi_dx_a,d2phi_dy_a,d2phi_dz_a,d2phi_dx_res,d2phi_dy_res,d2phi_dz_res,phi_a,phi_res;
+
+                    d2phi_dx_a=d2di_a(fileLoader->m_pressureField,i,j,k)/(dx*dx);
+                    d2phi_dy_a=d2dj_a(fileLoader->m_pressureField,i,j,k)/(dy*dy);
+                    d2phi_dz_a=d2dk_a(fileLoader->m_pressureField,i,j,k)/(dz*dz);
+
+                    d2phi_dx_res=d2di_res(fileLoader->m_pressureField,i,j,k)/(dx*dx);
+                    d2phi_dy_res=d2dj_res(fileLoader->m_pressureField,i,j,k)/(dy*dy);
+                    d2phi_dz_res=d2dk_res(fileLoader->m_pressureField,i,j,k)/(dz*dz);
+
+                    phi_a=d2phi_dx_a+d2phi_dy_a+d2phi_dz_a;
+                    phi_res=d2phi_dx_res+d2phi_dy_res+d2phi_dz_res;
+                    fileLoader->m_pressureField[i][j][k]=-(phi_res+fileLoader->m_RHS[i][j][k])/phi_a;
+                }
+            }
+        }
+
+        double pressure_mean=0.0;
+        int nnn=0;
+
+        for (i=1;i<NX-1;i++)
+        {
+            for (j=1;j<NY-1;j++)
+            {
+
+                for (k=1;k<NZ-1;k++)
+                {
+                    pressure_mean += fileLoader->m_pressureField[i][j][k];
+                    nnn++;
+                }
+            }
+        }
+
+        pressure_mean/=nnn;
+        for (i=1;i<NX-1;i++)
+        {
+            for (j=1;j<NY-1;j++)
+            {
+                for (k=1;k<NZ-1;k++)
+                {
+                    fileLoader->m_pressureField[i][j][k]-=pressure_mean;
+                    if(fileLoader->m_pressureField[i][j][k]< minPressure)
+                        minPressure = fileLoader->m_pressureField[i][j][k];
+                    if(fileLoader->m_pressureField[i][j][k]> maxPressure)
+                        maxPressure = fileLoader->m_pressureField[i][j][k];
+                }
+            }
+        }
     }
 }
 
@@ -816,33 +1017,143 @@ void kb(unsigned char key, int x, int y)
     {
         drawAcceleration = !drawAcceleration;
     }
+    if (key=='6')
+    {
+        drawGridVel = !drawGridVel;
+        if(drawGridVel)
+        {
+            drawGridAccel = false;
+            drawGridPressure = false;
+            interpolateInGrid();
+            average(100);
+        }
+    }
+    if (key=='7')
+    {
+        drawGridAccel = !drawGridAccel;
+        if(drawGridAccel)
+        {
+            drawGridVel = false;
+            drawGridPressure = false;
+            interpolateInGrid();
+            average(100);
+        }
+    }
+    if (key=='8')
+    {
+        drawGridPressure = !drawGridPressure;
+        if(drawGridPressure)
+        {
+            drawGridVel = false;
+            drawGridAccel = false;
+            interpolateInGrid();
+            average(100);
+            calcPressure(10);
+        }
+    }
+    if (key=='0')
+    {
+        if(currTime < fileLoader->m_timeStepCount)
+        {
+            currTime+=1;
+            updateCurrValues();
+            findNeighbors();
+        }
+
+        if(drawGridVel || drawGridAccel)
+        {
+            interpolateInGrid();
+            average(100);
+        }
+        if(drawGridPressure)
+        {
+            interpolateInGrid();
+            average(100);
+            calcPressure(10);
+        }
+        printf("Time %d/%d\n", currTime, fileLoader->m_timeStepCount);
+    }
+    if (key=='9')
+    {
+        if(currTime > 1)
+        {
+            currTime-=1;
+            updateCurrValues();
+            findNeighbors();
+        }
+        if(drawGridVel || drawGridAccel)
+        {
+            interpolateInGrid();
+            average(100);
+        }
+        if(drawGridPressure)
+        {
+            interpolateInGrid();
+            average(100);
+            calcPressure(10);
+        }
+        printf("Time %d/%d\n", currTime, fileLoader->m_timeStepCount);
+    }
+    if (key=='b')
+    {
+        average(100);
+    }
+    if (key=='o')
+    {
+        iNum++;
+        if(iNum>=NX)
+            iNum=NX-1;
+    }
+    if (key=='i')
+    {
+        iNum--;
+        if(iNum<0)
+            iNum=0;
+    }
+    if (key=='l')
+    {
+        jNum++;
+        if(jNum>=NY)
+            jNum=NY-1;
+    }
+    if (key=='k')
+    {
+        jNum--;
+        if(jNum<0)
+            jNum=0;
+    }
+
     if (key=='.')
     {
-        ck*=1.1;
+        kNum++;
+        if(kNum>=NZ)
+            kNum=NZ-1;
     }
     if (key==',')
     {
-        ck/=1.1;
+        kNum--;
+        if(kNum<0)
+            kNum=0;
     }
     if (key=='[')
     {
-        scale/=1.1;
+        scale/=1.2;
     }
     if (key==']')
     {
-        scale*=1.1;
+        scale*=1.2;
     }
     if (key=='w')
     {
-        view_x+=(o_x)*1.1;
-        view_y+=(o_y)*1.1;
-        view_z+=(o_z)*1.1;
+        view_x+=(o_x)*1.5;
+        view_y+=(o_y)*1.5;
+        view_z+=(o_z)*1.5;
     }
     if (key=='s')
     {
-        view_x-=(o_x)*1.1;
-        view_y-=(o_y)*1.1;
-        view_z-=(o_z)*1.1;
+        view_x-=(o_x)*1.5;
+        view_y-=(o_y)*1.5;
+        view_z-=(o_z)*1.5;
     }
     if (key=='q')
     {
@@ -855,19 +1166,19 @@ void kb(unsigned char key, int x, int y)
     if (key=='a')
     {
         double l2=sqrt(o_y*o_y+o_x*o_x);
-        view_y+=(o_x)*1.1/l2;
-        view_x+=-(o_y)*1.1/l2;
+        view_y+=(o_x)*1.5/l2;
+        view_x+=-(o_y)*1.5/l2;
     }
     if (key=='d')
     {
         double    l2=sqrt(o_y*o_y+o_x*o_x);
-        view_x+=(o_y)*1.1/l2;
-        view_y+=-(o_x)*1.1/l2;
+        view_x+=(o_y)*1.5/l2;
+        view_y+=-(o_x)*1.5/l2;
     }
 
     if(key == 'c')
     {
-        for (size_t s = 0; s < fileLoader->m_data.size();s++)
+        for (size_t s = 0; s < fileLoader->m_splinesCount;s++)
         {
             splineInterpolatorsX[s]->optimizeByGrad(1);
             splineInterpolatorsY[s]->optimizeByGrad(1);
@@ -896,11 +1207,11 @@ void kb(unsigned char key, int x, int y)
             th_vec.clear();
             for (int i = 0; i < THREADNUM; ++i)
             {
-                int numForOneProc = THREADNUM == 1 ? fileLoader->m_data.size() : (int)(fileLoader->m_data.size() / (THREADNUM - 1));
+                int numForOneProc = THREADNUM == 1 ? fileLoader->m_splinesCount : (int)(fileLoader->m_splinesCount / (THREADNUM - 1));
                 int startIdx = i * numForOneProc;
                 int endIdx =  (i + 1) * numForOneProc;
                 if(i == (THREADNUM - 1))
-                    endIdx = fileLoader->m_data.size();
+                    endIdx = fileLoader->m_splinesCount;
                 isNoOptimized[i] = 0;
                 th_vec.push_back(std::thread(threadOptimize,i, startIdx, endIdx));
             }
@@ -930,17 +1241,24 @@ void init()
     glLoadIdentity ();
     gluPerspective(45.0f, W_WIDTH*1.0/W_HEIGHT, 0.1f, 250.0f);
     glMatrixMode (GL_MODELVIEW);
-    fileLoader = new FileLoader("test/");//"DA_ppp_0_005/"
+    loadSettings();
+    fileLoader = new FileLoader(PATH);
     fileLoader->findFileInDir();
-    fileLoader->loadSplinesFromNewFormat();//fileLoader->loadSplines();
-    printf("Points loaded\n");
-    for (size_t i = 0; i < fileLoader->m_data.size(); i++)
+    fileLoader->loadSplinesFromVlad();//fileLoader->loadSplinesFromDinar();//fileLoader->loadSplinesFromOneFile();//fileLoader->loadSplinesFromNewFormat();//fileLoader->loadSplines();
+    printf("%d tracks loaded\n", fileLoader->m_splinesCount);
+    splineInterpolatorsX.resize(fileLoader->m_splinesCount);
+    splineInterpolatorsY.resize(fileLoader->m_splinesCount);
+    splineInterpolatorsZ.resize(fileLoader->m_splinesCount);
+    for (size_t i = 0; i < fileLoader->m_splinesCount; i++)
     {
-        splineInterpolatorsX.push_back(new SplineInterpolator(fileLoader->m_data[i].x));
-        splineInterpolatorsY.push_back(new SplineInterpolator(fileLoader->m_data[i].y));
-        splineInterpolatorsZ.push_back(new SplineInterpolator(fileLoader->m_data[i].z));
+        splineInterpolatorsX[i] = (new SplineInterpolator(fileLoader->m_data[i].x, fileLoader->m_data[i].t));
+        splineInterpolatorsY[i] = (new SplineInterpolator(fileLoader->m_data[i].y, fileLoader->m_data[i].t));
+        splineInterpolatorsZ[i] = (new SplineInterpolator(fileLoader->m_data[i].z, fileLoader->m_data[i].t));
     }
     printf("Splines calculated\n");
+
+    updateCurrValues();
+    //findNeighbors();
 
     view_x=xmin-0.5*(xmax-xmin);//xmin-0.5*(xmax-xmin);
     view_y=0.5*(ymax-ymin);//ymin-0.5*(ymax-ymin);
