@@ -23,19 +23,24 @@
 #define NY 126
 #define NZ 76
 
-#define x0_ -50
-#define x1_ 50
-#define y0_ -25
-#define y1_ 25
-#define z0_ 0.01
-#define z1_ 30.01
+
+#define NUMCELLS 20
+
+
+#define x0_ 1.75//-2.5//-50
+#define x1_ 6.75//2.5//50
+#define y0_ -1.25//-25
+#define y1_ 1.25//25
+#define z0_ 0.04//0.01
+#define z1_ 1.0//30.01
 
 #define dx ((x1_-x0_) * 1.0 / NX)
 #define dy ((y1_-y0_) * 1.0 / NY)
 #define dz ((z1_-z0_) * 1.0 / NZ)
 
+
 #define THREADNUM 16
-#define PATH "dns_data/"//"DA_ppp_0_025/"//"E:/projects/splineViewer/0.080ppp.txt"//"DA_ppp_0_160/"//"NoisyTracks/"//"ExactTracks/"//"NoisyTracks/"//"ExactTracks/"//"NoisyTracks/"//"ExactTracks/"//"NoisyTracks/"//"E:/projects/splineViewer/ActiveLongTracks50_0.080ppp_best.txt"
+#define PATH "DA_ppp_0_005/"//"E:/projects/splineViewer/ActiveLongTracks50.txt"//"dns_data/"//"DA_ppp_0_025/"//"E:/projects/splineViewer/0.080ppp.txt"//"DA_ppp_0_160/"//"NoisyTracks/"//"ExactTracks/"//"NoisyTracks/"//"ExactTracks/"//"NoisyTracks/"//"ExactTracks/"//"NoisyTracks/"//"E:/projects/splineViewer/ActiveLongTracks50_0.080ppp_best.txt"
 //"ExactTracks/"//"E:/projects/splineViewer/ActiveLongTracks50_0.050ppp_best.txt"
 //"DA_ppp_0_025/""DA_ppp_0_160/"//"DA_ppp_0_005/""test/""testNoise10x/""testNoise100x/"
 
@@ -47,9 +52,12 @@ struct posVelAccel
         : x(ix), y(iy), z(iz), u(iu), v(iv), w(iw), ax(iax), ay(iay), az(iaz) {}
     double x, y, z;
     double u, v, w;
-    double ax, ay, az;
+    double ax, ay, az, diva;
+    bool hasP = false;
+    double p;
     vector<int> neighbours;
     bool isBound = false;
+    int boundType = -1;
 };
 
 extern int clear_w;

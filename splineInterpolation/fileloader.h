@@ -34,10 +34,12 @@ struct FileLoader
     int m_numbers[10000000];
     vector<vec3> m_data;
     int m_numInCell[NX][NY][NZ];
+    vector<int> m_neighboursInCell[NX][NY][NZ];
     double m_velField[3][NX][NY][NZ];
     double m_velFieldCurr[3][NX][NY][NZ];
     double m_velFieldFiltered[3][NX][NY][NZ];
     double m_accelField[3][NX][NY][NZ];
+    double m_divAccelField[NX][NY][NZ];
     double m_accelFieldCurr[3][NX][NY][NZ];
     double m_accelFieldFiltered[3][NX][NY][NZ];
     double m_pressureField[NX][NY][NZ];

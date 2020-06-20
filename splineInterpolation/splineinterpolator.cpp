@@ -25,7 +25,7 @@ SplineInterpolator::SplineInterpolator(std::vector<double> &vec, std::vector<int
     }
     m_dF = 1.0;
     m_tolerance = 1e-6;
-    m_dt = 0.02;//0.0006;//0.04;//0.0006;
+    m_dt = 0.0006;//0.02;//0.0006;//0.04;//0.0006;
     m_optimizationStep = m_tolerance;
     s_sweep();
     delete m_f;
@@ -149,12 +149,12 @@ double SplineInterpolator::getCoord(double n)
 
 double SplineInterpolator::getVel(double n)
 {
-    return S_(n, 1)/*/1000*//m_dt;//S_(n, 1)/1000/m_dt;//S_(n, 1)/*/1000*//m_dt;
+    return S_(n, 1)/1000/m_dt;//S_(n, 1)/*/1000*//m_dt;//S_(n, 1)/1000/m_dt;//S_(n, 1)/*/1000*//m_dt;
 }
 
 double SplineInterpolator::getAccel(double n)
 {
-    return S_(n, 2)/*/1000*//m_dt/m_dt;//S_(n, 2)/1000/m_dt/m_dt;//S_(n, 2)/*/1000*//m_dt/m_dt;
+    return S_(n, 2)/1000/m_dt/m_dt;//S_(n, 2)/*/1000*//m_dt/m_dt;//S_(n, 2)/1000/m_dt/m_dt;//S_(n, 2)/*/1000*//m_dt/m_dt;
 }
 
 double SplineInterpolator::S_(double x, int derivNum /*= 0*/)
@@ -217,7 +217,7 @@ void SplineInterpolator::optimizeByRand(size_t itn)
 
 void SplineInterpolator::calcGrad(double FBefore)
 {
-    for(size_t j = 0; j <= m_size + 1; j++)
+    for(size_t j = 1; j <= m_size; j++)
     {
         double dc = 0.1 * m_optimizationStep;
         double cTmp = m_c[j];
@@ -235,11 +235,15 @@ int SplineInterpolator::optimizeByGrad(size_t itn)
         for(size_t i = 0; i < itn; i++)
         {
             calcGrad(FBefore);
-            for(size_t j = 0; j <= m_size + 1; j++)
+            for(size_t j = 1; j <= m_size ; j++)
             {
                 m_c[j] -= 0.001 * m_cGrad[j];
             }
         }
+        m_c[0] = m_c[3] + 3.0 * m_c[1] - 3.0 * m_c[2];
+        m_c[m_size+1] = m_c[m_size-2] - 3.0 * m_c[m_size-1] + 3.0 * m_c[m_size];
+        //m_c[0] = 2.0 * m_c[1] - m_c[2];
+        //m_c[m_size + 1] = 2.0 * m_c[m_size] - m_c[m_size - 1];
         m_dF = FBefore - getF();
         return 1;
     }

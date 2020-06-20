@@ -2,8 +2,7 @@
 #include "tools.h"
 #include "fileloader.h"
 #include "splineinterpolator.h"
-
-#define NUMCELLS 10
+#include "leastsquaressolver.h"
 
 void threadOptimize(int threadIdx, int startIdx, int endIdx);
 void display(void);
@@ -16,6 +15,8 @@ vector<SplineInterpolator*> splineInterpolatorsY;
 vector<SplineInterpolator*> splineInterpolatorsZ;
 
 vector<posVelAccel> currValues;
+
+leastSquaresSolver lssP;
 
 vector<int> particlesGrid[NUMCELLS][NUMCELLS][NUMCELLS];
 
@@ -40,7 +41,7 @@ void display(void)
 
     size_t numVelVec = 20;
     size_t numSplinePoints = 100;
-    size_t drawSplineStep = 100;
+    size_t drawSplineStep = 1;
     size_t drawPointStep = 1;
 
     if(!rangeCalculated)
@@ -73,22 +74,20 @@ void display(void)
 
     if(drawPoint)
     {
-        /*glPointSize(3);
+        glPointSize(4);
         glBegin(GL_POINTS);
         for( size_t i = 0; i < currValues.size(); i++ )
         {
-            if(currValues[i].isBound)
+            //if(currValues[i].isBound)
             {
-                double vel = currValues[i].u *  currValues[i].u
-                        +    currValues[i].v *  currValues[i].v
-                        +    currValues[i].w *  currValues[i].w;
-                get_color(sqrt(vel), minVel, maxVel);
+
+                glColor3f(1,1,1);
                 glVertex3f(currValues[i].x, currValues[i].y, currValues[i].z);
             }
         }
         glEnd();
 
-        glPointSize(7);
+        /*glPointSize(7);
         glBegin(GL_POINTS);
         glColor3f(1,0,0);
         int num = 0;
@@ -99,9 +98,94 @@ void display(void)
             glVertex3f(currValues[currValues[num].neighbours[i]].x, currValues[currValues[num].neighbours[i]].y, currValues[currValues[num].neighbours[i]].z);
         }
         glEnd();*/
+
+
+        /*glPointSize(10);
+        glBegin(GL_POINTS);
+        glColor3f(1,0,0);
+        glVertex3f(x0_ + 150*dx, y0_+  100*dy, z0_+50*dz);
+        printf("sz=%d\n", fileLoader->m_neighboursInCell[150][100][50].size());
+        for( int i = 0; i < fileLoader->m_neighboursInCell[150][100][50].size(); i++ )
+        {
+            glColor3f(0, 0.2 + i * 0.8 /(fileLoader->m_neighboursInCell[150][100][50].size()-1),0);
+            glVertex3f(currValues[fileLoader->m_neighboursInCell[150][100][50][i]].x, currValues[fileLoader->m_neighboursInCell[150][100][50][i]].y, currValues[fileLoader->m_neighboursInCell[150][100][50][i]].z);
+        }
+        glEnd();*/
+
+
+
         /*double minP=1e10;
         double maxP=-1e10;
-        for (size_t s = 0; s < fileLoader->m_p.size(); s+=100)
+        for (size_t s = 0; s < fileLoader->m_p.size(); s+=1)
+        {
+            if(!splineInterpolatorsX[s]->m_moreMinNumber)
+                continue;
+            for( size_t i = 0; i < fileLoader->m_p[s].p.size(); i++ )
+            {
+                if(currTime == fileLoader->m_p[s].t[i])
+                {
+                    minP = min(minP, fileLoader->m_p[s].p[i]);
+                    maxP = max(maxP, fileLoader->m_p[s].p[i]);
+                }
+            }
+        }
+        glPointSize(5);
+        glBegin(GL_POINTS);
+        for (size_t s = 0; s < fileLoader->m_p.size(); s+=1)
+        {
+            if(!splineInterpolatorsX[s]->m_moreMinNumber)
+                continue;
+            for( size_t i = 0; i < fileLoader->m_p[s].p.size(); i++ )
+            {
+                if(currTime == fileLoader->m_p[s].t[i])
+                {
+                    get_color(scale *fileLoader->m_p[s].p[i], minP, maxP);
+                    glVertex3f(fileLoader->m_data[s].x[i], fileLoader->m_data[s].y[i], fileLoader->m_data[s].z[i]);
+                }
+            }
+        }
+        glEnd();*/
+
+        //printf("v=%f v=%f\n", splineInterpolatorsX[0]->getVel(10), fileLoader->m_vel[0].x[10]);
+
+        /*glPointSize(5);
+        glBegin(GL_POINTS);
+        for (size_t s = 0; s < fileLoader->m_vel.size(); s+=1)
+        {
+            if(!splineInterpolatorsX[s]->m_moreMinNumber)
+                continue;
+            for( size_t i = 0; i < fileLoader->m_vel[s].x.size(); i++ )
+            {
+                if(currTime == fileLoader->m_p[s].t[i])
+                {
+                    double vel = fileLoader->m_vel[s].x[i] * fileLoader->m_vel[s].x[i]
+                            + fileLoader->m_vel[s].y[i] * fileLoader->m_vel[s].y[i]
+                            + fileLoader->m_vel[s].z[i] * fileLoader->m_vel[s].z[i];
+                    get_color(sqrt(vel), minVel, maxVel);
+                    glVertex3f(fileLoader->m_data[s].x[i], fileLoader->m_data[s].y[i], fileLoader->m_data[s].z[i]);
+                }
+            }
+        }
+        glEnd();*/
+
+    }
+
+    if(drawLineSeg)
+    {
+        /* double minP_=1e10;
+        double maxP_=-1e10;
+        for( size_t i = 0; i < currValues.size(); i+=1 )
+        {
+            {
+                minP_ = min(minP_,  currValues[i].p);
+                maxP_ = max(maxP_,  currValues[i].p);
+            }
+        }
+
+        printf("minP_ = %f  maxP_ = %f\n", minP_, maxP_);*/
+        /* double minP=1e10;
+        double maxP=-1e10;
+        for (size_t s = 0; s < fileLoader->m_p.size(); s+=1)
         {
             if(!splineInterpolatorsX[s]->m_moreMinNumber)
                 continue;
@@ -114,46 +198,35 @@ void display(void)
                 }
             }
         }*/
-        /*glPointSize(3);
+
+        /* glPointSize(5);
         glBegin(GL_POINTS);
-        for (size_t s = 0; s < fileLoader->m_p.size(); s+=100)
+        for( size_t i = 0; i < currValues.size(); i+=1 )
         {
-            if(!splineInterpolatorsX[s]->m_moreMinNumber)
-                continue;
-            for( size_t i = 0; i < fileLoader->m_p[s].p.size(); i++ )
-            {
-                //if(currTime == fileLoader->m_p[s].t[i])
-                {
-                    get_color(fileLoader->m_p[s].p[i], minP, maxP);
-                    glVertex3f(fileLoader->m_data[s].x[i], fileLoader->m_data[s].y[i], fileLoader->m_data[s].z[i]);
-                }
-            }
+            get_color(scale *currValues[i].p, minP_, maxP_);
+            glVertex3f(currValues[i].x, currValues[i].y, currValues[i].z);
         }
         glEnd();*/
 
-        glPointSize(5);
-        glBegin(GL_POINTS);
-        for (size_t s = 0; s < fileLoader->m_vel.size(); s+=100)
-        {
-            if(!splineInterpolatorsX[s]->m_moreMinNumber)
-                continue;
-            for( size_t i = 0; i < fileLoader->m_vel[s].x.size(); i++ )
-            {
-                //if(currTime == fileLoader->m_p[s].t[i])
-                {
-                    double vel = fileLoader->m_vel[s].x.size() * fileLoader->m_vel[s].x.size()
-                            + fileLoader->m_vel[s].y.size() * fileLoader->m_vel[s].y.size()
-                            + fileLoader->m_vel[s].z.size() * fileLoader->m_vel[s].z.size();
-                    get_color(sqrt(vel), minVel, maxVel);
-                    glVertex3f(fileLoader->m_data[s].x[i], fileLoader->m_data[s].y[i], fileLoader->m_data[s].z[i]);
-                }
-            }
-        }
-        glEnd();
+
+
 
     }
 
-
+    /*if(drawVelocity)
+    {
+        glPointSize(3);
+        glBegin(GL_POINTS);
+        for( size_t i = 0; i < currValues.size(); i+=1 )
+        {
+            if(currValues[i].isBound)
+            {
+                glColor3f(1,1,1);
+                glVertex3f(currValues[i].x, currValues[i].y, currValues[i].z);
+            }
+        }
+        glEnd();
+    }*/
 
     for (size_t s = 0; s < fileLoader->m_splinesCount; s+=drawSplineStep)
     {
@@ -186,7 +259,7 @@ void display(void)
         }
         if(drawVelocity)
         {
-            glLineWidth(1);
+            /*glLineWidth(1);
             glBegin(GL_LINES);
             for( size_t i=0; i<=numVelVec; i++)
             {
@@ -199,7 +272,7 @@ void display(void)
                            , splineInterpolatorsY[s]->getCoord(i*(splineInterpolatorsY[s]->m_size-1)*1.0/numVelVec) + scale * 5.0 * splineInterpolatorsY[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec)
                            , splineInterpolatorsZ[s]->getCoord(i*(splineInterpolatorsZ[s]->m_size-1)*1.0/numVelVec) + scale * 5.0 * splineInterpolatorsZ[s]->getVel(i*(splineInterpolatorsX[s]->m_size-1)*1.0/numVelVec));
             }
-            glEnd();
+            glEnd();*/
         }
         if(drawAcceleration)
         {
@@ -515,7 +588,156 @@ void calcEfficient()
 void interpolateInGrid()
 {
     printf("Intarpolation started\n");
-    for( int xyz=0; xyz<3; xyz+=1)
+
+    double grid_dx = (xmax - xmin) * 1.0 / (NUMCELLS);
+    double grid_dy = (ymax - ymin) * 1.0 / (NUMCELLS);
+    double grid_dz = (zmax - zmin) * 1.0 / (NUMCELLS);
+    double dr = pow(grid_dx*grid_dy*grid_dz,1.0/3) * 1.5;
+    for( int i=0; i<NX; i+=1)
+        for( int j=0; j<NY; j+=1)
+            for( int k=0; k<NZ; k+=1)
+            {
+                fileLoader->m_numInCell[i][j][k]=0;
+                for( int xyz=0; xyz<3; xyz+=1)
+                {
+                    fileLoader->m_velField[xyz][i][j][k]=0.0;
+                    fileLoader->m_accelField[xyz][i][j][k]=0.0;
+                }
+            }
+    for( int i=0; i<NX; i+=1)
+    {
+        printf("i=%d\n", i);
+        for( int j=0; j<NY; j+=1)
+        {
+            for( int k=0; k<NZ; k+=1)
+            {
+
+                fileLoader->m_neighboursInCell[i][j][k].clear();
+                int xIdx = int((i*dx)/grid_dx);
+                int yIdx = int((j*dy)/grid_dy);
+                int zIdx = int((k*dz)/grid_dz);
+                int im = max(0, xIdx-2);
+                int ip = min(NUMCELLS - 1, xIdx+2);
+                int jm = max(0, yIdx-2);
+                int jp = min(NUMCELLS - 1, yIdx+2);
+                int km = max(0, zIdx-2);
+                int kp = min(NUMCELLS - 1, zIdx+2);
+                double lx = x0_ + i*dx;
+                double ly = y0_ + j*dy;
+                double lz = z0_ + k*dz;
+
+                double locdr = dr/2.0;
+                while(fileLoader->m_neighboursInCell[i][j][k].size() < 11)
+                {
+                    locdr*=2.0;
+                    fileLoader->m_neighboursInCell[i][j][k].clear();
+                    for (int ii = im; ii <= ip ; ii++)
+                        for (int jj = jm; jj <=jp; jj++)
+                            for (int kk = km; kk <=kp; kk++)
+                                for(int n = 0; n < particlesGrid[ii][jj][kk].size(); n++)
+                                {
+                                    double r2 = (lx - currValues[particlesGrid[ii][jj][kk].at(n)].x) * (lx - currValues[particlesGrid[ii][jj][kk].at(n)].x)
+                                            +   (ly - currValues[particlesGrid[ii][jj][kk].at(n)].y) * (ly - currValues[particlesGrid[ii][jj][kk].at(n)].y)
+                                            +   (lz - currValues[particlesGrid[ii][jj][kk].at(n)].z) * (lz - currValues[particlesGrid[ii][jj][kk].at(n)].z);
+                                    if(r2 <= locdr * locdr)
+                                    {
+                                        fileLoader->m_neighboursInCell[i][j][k].push_back(particlesGrid[ii][jj][kk].at(n));
+                                    }
+                                }
+                }
+
+
+                if(fileLoader->m_neighboursInCell[i][j][k].size() > 1)
+                    for (int ii = 0; ii < fileLoader->m_neighboursInCell[i][j][k].size()  - 1; ii++)
+                        for (int jj = 0; jj < fileLoader->m_neighboursInCell[i][j][k].size()  - ii - 1; jj++)
+                        {
+                            double r1 = (lx - currValues[fileLoader->m_neighboursInCell[i][j][k].at(jj)].x) *   (lx - currValues[fileLoader->m_neighboursInCell[i][j][k].at(jj)].x)
+                                    +   (ly - currValues[fileLoader->m_neighboursInCell[i][j][k].at(jj)].y) *   (ly - currValues[fileLoader->m_neighboursInCell[i][j][k].at(jj)].y)
+                                    +   (lz - currValues[fileLoader->m_neighboursInCell[i][j][k].at(jj)].z) *   (lz - currValues[fileLoader->m_neighboursInCell[i][j][k].at(jj)].z);
+                            double r2 = (lx - currValues[fileLoader->m_neighboursInCell[i][j][k].at(jj+1)].x) * (lx - currValues[fileLoader->m_neighboursInCell[i][j][k].at(jj+1)].x)
+                                    +   (ly - currValues[fileLoader->m_neighboursInCell[i][j][k].at(jj+1)].y) * (ly - currValues[fileLoader->m_neighboursInCell[i][j][k].at(jj+1)].y)
+                                    +   (lz - currValues[fileLoader->m_neighboursInCell[i][j][k].at(jj+1)].z) * (lz - currValues[fileLoader->m_neighboursInCell[i][j][k].at(jj+1)].z);
+                            if (r1 > r2)
+                                swap(fileLoader->m_neighboursInCell[i][j][k].at(jj), fileLoader->m_neighboursInCell[i][j][k].at(jj+1));
+                        }
+            }
+        }
+    }
+
+    node3d n;
+    deriv3D derivsAx, derivsAy, derivsAz;
+    leastSquaresSolver lssAx, lssAy, lssAz, lssP;
+
+
+    for( int i=0; i<NX; i+=1)
+    {
+        printf("i=%d\n", i);
+        for( int j=0; j<NY; j+=1)
+        {
+            for( int k=0; k<NZ; k+=1)
+            {
+                double lx = x0_ + i*dx;
+                double ly = y0_ + j*dy;
+                double lz = z0_ + k*dz;
+
+                if(fileLoader->m_neighboursInCell[i][j][k].size() < 11)
+                {
+                    printf("lesThenEleven\n");
+                    continue;
+                }
+                if(fileLoader->m_neighboursInCell[i][j][k].size() > 50)
+                    fileLoader->m_neighboursInCell[i][j][k].resize(50);
+
+                lssAx.m_p.clear();
+                lssAy.m_p.clear();
+                lssAz.m_p.clear();
+                double rad = 0.5 * ((lx - currValues[fileLoader->m_neighboursInCell[i][j][k].at(fileLoader->m_neighboursInCell[i][j][k].size() - 1)].x) * (lx - currValues[fileLoader->m_neighboursInCell[i][j][k].at(fileLoader->m_neighboursInCell[i][j][k].size() - 1)].x)
+                        +           (ly - currValues[fileLoader->m_neighboursInCell[i][j][k].at(fileLoader->m_neighboursInCell[i][j][k].size() - 1)].y) * (ly - currValues[fileLoader->m_neighboursInCell[i][j][k].at(fileLoader->m_neighboursInCell[i][j][k].size() - 1)].y)
+                        +           (lz - currValues[fileLoader->m_neighboursInCell[i][j][k].at(fileLoader->m_neighboursInCell[i][j][k].size() - 1)].z) * (lz - currValues[fileLoader->m_neighboursInCell[i][j][k].at(fileLoader->m_neighboursInCell[i][j][k].size() - 1)].z));
+                for (int ii = 0; ii< fileLoader->m_neighboursInCell[i][j][k].size(); ii++)
+                {
+                    n.x=currValues[fileLoader->m_neighboursInCell[i][j][k].at(ii)].x;
+                    n.y=currValues[fileLoader->m_neighboursInCell[i][j][k].at(ii)].y;
+                    n.z=currValues[fileLoader->m_neighboursInCell[i][j][k].at(ii)].z;
+
+
+                    n.f = currValues[fileLoader->m_neighboursInCell[i][j][k].at(ii)].ax;
+                    lssAx.m_p.push_back(n);
+                    n.f = currValues[fileLoader->m_neighboursInCell[i][j][k].at(ii)].ay;
+                    lssAy.m_p.push_back(n);
+                    n.f = currValues[fileLoader->m_neighboursInCell[i][j][k].at(ii)].az;
+                    lssAz.m_p.push_back(n);
+                }
+                n.x = lx;
+                n.y = ly;
+                n.z = lz;
+
+                lssAx.get_derivs_fast(n, derivsAx,  rad);
+                lssAy.get_derivs_fast(n, derivsAy,  rad);
+                lssAz.get_derivs_fast(n, derivsAz,  rad);
+
+                fileLoader->m_accelField[0][i][j][k] = derivsAx.d[leastSquaresSolver::F];
+                fileLoader->m_accelField[1][i][j][k] = derivsAy.d[leastSquaresSolver::F];
+                fileLoader->m_accelField[2][i][j][k] = derivsAz.d[leastSquaresSolver::F];
+
+                maxAccel = max(maxAccel, sqrt(fileLoader->m_accelField[0][i][j][k]*fileLoader->m_accelField[0][i][j][k]
+                        +  fileLoader->m_accelField[1][i][j][k] * fileLoader->m_accelField[1][i][j][k]
+                        +  fileLoader->m_accelField[2][i][j][k] * fileLoader->m_accelField[2][i][j][k]));
+
+                minAccel = min(minAccel, sqrt(fileLoader->m_accelField[0][i][j][k]*fileLoader->m_accelField[0][i][j][k]
+                        +  fileLoader->m_accelField[1][i][j][k] * fileLoader->m_accelField[1][i][j][k]
+                        +  fileLoader->m_accelField[2][i][j][k] * fileLoader->m_accelField[2][i][j][k]));
+
+
+                fileLoader->m_divAccelField[i][j][k] = derivsAx.d[leastSquaresSolver::FX]
+                        +  derivsAy.d[leastSquaresSolver::FY]
+                        +  derivsAz.d[leastSquaresSolver::FZ];
+            }
+        }
+    }
+
+
+    /*for( int xyz=0; xyz<3; xyz+=1)
         for( int i=0; i<NX; i+=1)
             for( int j=0; j<NY; j+=1)
                 for( int k=0; k<NZ; k+=1)
@@ -551,7 +773,7 @@ void interpolateInGrid()
                     fileLoader->m_velFieldCurr[xyz][i][j][k] = fileLoader->m_velField[xyz][i][j][k];
                     fileLoader->m_accelFieldCurr[xyz][i][j][k] = fileLoader->m_accelField[xyz][i][j][k];
 
-                }
+                }*/
     printf("Intarpolation finished\n");
 }
 
@@ -627,9 +849,12 @@ void updateCurrValues()
         for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
         {
             if(currTime == splineInterpolatorsX[s]->m_time[i])
+            {
                 currValues.push_back(posVelAccel(splineInterpolatorsX[s]->getCoord(i), splineInterpolatorsY[s]->getCoord(i), splineInterpolatorsZ[s]->getCoord(i),
                                                  splineInterpolatorsX[s]->getVel(i), splineInterpolatorsY[s]->getVel(i), splineInterpolatorsZ[s]->getVel(i),
                                                  splineInterpolatorsX[s]->getAccel(i), splineInterpolatorsY[s]->getAccel(i), splineInterpolatorsZ[s]->getAccel(i)));
+                currValues[currValues.size() - 1].p = rand() * 0.1/ RAND_MAX;
+            }
         }
     }
 }
@@ -637,10 +862,10 @@ void updateCurrValues()
 
 void findNeighbors()
 {
-    double grid_dx = (xmax - xmin) * 1.0 / (NUMCELLS);
-    double grid_dy = (ymax - ymin) * 1.0 / (NUMCELLS);
-    double grid_dz = (zmax - zmin) * 1.0 / (NUMCELLS);
-    double dr = pow(grid_dx*grid_dy*grid_dz,1.0/3)*0.5;
+    double grid_dx = (x1_ - x0_) * 1.0 / (NUMCELLS);
+    double grid_dy = (y1_ - y0_) * 1.0 / (NUMCELLS);
+    double grid_dz = (z1_ - z0_) * 1.0 / (NUMCELLS);
+    double dr = pow(grid_dx*grid_dy*grid_dz,1.0/3)*2.0;
     for (size_t i = 0; i < NUMCELLS; i++)
     {
         for (size_t j = 0; j < NUMCELLS; j++)
@@ -653,9 +878,19 @@ void findNeighbors()
     }
     for (int i = 0; i < currValues.size(); i++)
     {
-        int xIdx = int((currValues[i].x - xmin)/grid_dx);
-        int yIdx = int((currValues[i].y - ymin)/grid_dy);
-        int zIdx = int((currValues[i].z - zmin)/grid_dz);
+        int xIdx = int((currValues[i].x - x0_)/grid_dx);
+        int yIdx = int((currValues[i].y - y0_)/grid_dy);
+        int zIdx = int((currValues[i].z - z0_)/grid_dz);
+
+        if(xIdx> NUMCELLS-1)
+            xIdx =NUMCELLS-1;
+
+        if(yIdx> NUMCELLS-1)
+            yIdx =NUMCELLS-1;
+
+        if(zIdx> NUMCELLS-1)
+            zIdx =NUMCELLS-1;
+
         particlesGrid[xIdx][yIdx][zIdx].push_back(i);
     }
 
@@ -666,7 +901,7 @@ void findNeighbors()
             {
                 int iIdx = i == 0 ? 0 : NUMCELLS - 1;
                 int size = particlesGrid[iIdx][j][k].size();
-                if(size == 0)
+                if(size < 2)
                     continue;
                 double length = pow (((grid_dx * grid_dy * grid_dz) * 1.0 / size), 1.0/ 3.0);
                 int targetNumBound = int(size * length / grid_dx);
@@ -679,21 +914,27 @@ void findNeighbors()
 
                 if(iIdx == 0)
                     for (int n = 0; n < targetNumBound ; n++)
+                    {
                         currValues[particlesGrid[iIdx][j][k].at(n)].isBound = true;
+                        currValues[particlesGrid[iIdx][j][k].at(n)].boundType = 0;
+                    }
                 else
                     for (int n = size - 1; n > size - targetNumBound ; n--)
+                    {
                         currValues[particlesGrid[iIdx][j][k].at(n)].isBound = true;
+                        currValues[particlesGrid[iIdx][j][k].at(n)].boundType = 1;
+                    }
             }
 
 
-    /*//find boundary by y
+    //find boundary by y
     for (int i = 0; i < NUMCELLS ; i++)
         for (int j = 0; j < 2 ; j++)
             for (int k = 0; k < NUMCELLS; k++)
             {
                 int jIdx = j == 0 ? 0 : NUMCELLS - 1;
                 int size = particlesGrid[i][jIdx][k].size();
-                if(size == 0)
+                if(size < 2)
                     continue;
                 double length = pow (((grid_dx * grid_dy * grid_dz) * 1.0 / size), 1.0/ 3.0);
                 int targetNumBound = int(size * length / grid_dy);
@@ -706,22 +947,28 @@ void findNeighbors()
 
                 if(jIdx == 0)
                     for (int n = 0; n < targetNumBound ; n++)
+                    {
                         currValues[particlesGrid[i][jIdx][k].at(n)].isBound = true;
+                        currValues[particlesGrid[i][jIdx][k].at(n)].boundType = 2;
+                    }
                 else
                     for (int n = size - 1; n > size - targetNumBound ; n--)
+                    {
                         currValues[particlesGrid[i][jIdx][k].at(n)].isBound = true;
-            }*/
+                        currValues[particlesGrid[i][jIdx][k].at(n)].boundType = 3;
+                    }
+            }
 
     //find boundary by z
     for (int i = 0; i < NUMCELLS ; i++)
-        for (int j = 0; j < NUMCELLS ; j++)
+        for (int j = 0; j <  NUMCELLS ; j++)
             for (int k = 0; k < 2; k++)
             {
                 int kIdx = k == 0 ? 0 : NUMCELLS - 1;
                 int size = particlesGrid[i][j][kIdx].size();
-                if(size == 0)
+                if(size < 3)
                     continue;
-                double length = pow (((grid_dx * grid_dy * grid_dz) * 1.0 / size), 1.0/ 3.0);
+                double length = grid_dz;//pow (((grid_dx * grid_dy * grid_dz) * 1.0 / size), 1.0/ 3.0);
                 int targetNumBound = int(size * length / grid_dz);
 
 
@@ -732,10 +979,16 @@ void findNeighbors()
 
                 if(kIdx == 0)
                     for (int n = 0; n < targetNumBound ; n++)
+                    {
                         currValues[particlesGrid[i][j][kIdx].at(n)].isBound = true;
+                        currValues[particlesGrid[i][j][kIdx].at(n)].boundType = 4;
+                    }
                 else
                     for (int n = size - 1; n > size - targetNumBound ; n--)
+                    {
                         currValues[particlesGrid[i][j][kIdx].at(n)].isBound = true;
+                        currValues[particlesGrid[i][j][kIdx].at(n)].boundType = 5;
+                    }
             }
 
 
@@ -746,41 +999,49 @@ void findNeighbors()
         int xIdx = int((currValues[s].x - xmin)/grid_dx);
         int yIdx = int((currValues[s].y - ymin)/grid_dy);
         int zIdx = int((currValues[s].z - zmin)/grid_dz);
-        int im = max(0, xIdx-1);
-        int ip = min(NUMCELLS - 1, xIdx+1);
-        int jm = max(0, yIdx-1);
-        int jp = min(NUMCELLS - 1, yIdx+1);
-        int km = max(0, zIdx-1);
-        int kp = min(NUMCELLS - 1, zIdx+1);
+        int im = max(0, xIdx-2);
+        int ip = min(NUMCELLS - 1, xIdx+2);
+        int jm = max(0, yIdx-2);
+        int jp = min(NUMCELLS - 1, yIdx+2);
+        int km = max(0, zIdx-2);
+        int kp = min(NUMCELLS - 1, zIdx+2);
 
-        for (int i = im; i <= ip ; i++)
-            for (int j = jm; j <=jp; j++)
-                for (int k = km; k <=kp; k++)
-                    for(int n = 0; n < particlesGrid[i][j][k].size(); n++)
-                    {
-                        if(i == particlesGrid[i][j][k][n])
-                            continue;
-                        double r2 = (currValues[s].x - currValues[particlesGrid[i][j][k].at(n)].x) * (currValues[s].x - currValues[particlesGrid[i][j][k].at(n)].x)
-                                +   (currValues[s].y - currValues[particlesGrid[i][j][k].at(n)].y) * (currValues[s].y - currValues[particlesGrid[i][j][k].at(n)].y)
-                                +   (currValues[s].z - currValues[particlesGrid[i][j][k].at(n)].z) * (currValues[s].z - currValues[particlesGrid[i][j][k].at(n)].z);
-                        if(r2 < dr * dr)
+
+        double locdr = dr/2.0;
+        while(currValues[s].neighbours.size() < 11)
+        {
+            locdr*=2.0;
+            currValues[s].neighbours.clear();
+            for (int i = im; i <= ip ; i++)
+                for (int j = jm; j <=jp; j++)
+                    for (int k = km; k <=kp; k++)
+                        for(int n = 0; n < particlesGrid[i][j][k].size(); n++)
                         {
-                            currValues[s].neighbours.push_back(particlesGrid[i][j][k].at(n));
+                            if(s == particlesGrid[i][j][k].at(n))
+                                continue;
+                            double r2 = (currValues[s].x - currValues[particlesGrid[i][j][k].at(n)].x) * (currValues[s].x - currValues[particlesGrid[i][j][k].at(n)].x)
+                                    +   (currValues[s].y - currValues[particlesGrid[i][j][k].at(n)].y) * (currValues[s].y - currValues[particlesGrid[i][j][k].at(n)].y)
+                                    +   (currValues[s].z - currValues[particlesGrid[i][j][k].at(n)].z) * (currValues[s].z - currValues[particlesGrid[i][j][k].at(n)].z);
+                            if(r2 < locdr * locdr)
+                            {
+                                currValues[s].neighbours.push_back(particlesGrid[i][j][k].at(n));
+                            }
                         }
-                    }
-
-        for (int i = 0; i < currValues[s].neighbours.size() - 1; i++)
-            for (int j = 0; j < currValues[s].neighbours.size() - i - 1; j++)
-            {
-                double r1 = (currValues[s].x - currValues[currValues[s].neighbours.at(j)].x) * (currValues[s].x - currValues[currValues[s].neighbours.at(j)].x)
-                        +   (currValues[s].y - currValues[currValues[s].neighbours.at(j)].y) * (currValues[s].y - currValues[currValues[s].neighbours.at(j)].y)
-                        +   (currValues[s].z - currValues[currValues[s].neighbours.at(j)].z) * (currValues[s].z - currValues[currValues[s].neighbours.at(j)].z);
-                double r2 = (currValues[s].x - currValues[currValues[s].neighbours.at(j+1)].x) * (currValues[s].x - currValues[currValues[s].neighbours.at(j+1)].x)
-                        +   (currValues[s].y - currValues[currValues[s].neighbours.at(j+1)].y) * (currValues[s].y - currValues[currValues[s].neighbours.at(j+1)].y)
-                        +   (currValues[s].z - currValues[currValues[s].neighbours.at(j+1)].z) * (currValues[s].z - currValues[currValues[s].neighbours.at(j+1)].z);
-                if (r1 > r2)
-                    swap(currValues[s].neighbours.at(j), currValues[s].neighbours.at(j+1));
-            }
+        }
+        //printf("size=%d\n", currValues[s].neighbours.size());
+        if(currValues[s].neighbours.size() > 1)
+            for (int i = 0; i < currValues[s].neighbours.size() - 1; i++)
+                for (int j = 0; j < currValues[s].neighbours.size() - i - 1; j++)
+                {
+                    double r1 = (currValues[s].x - currValues[currValues[s].neighbours.at(j)].x) * (currValues[s].x - currValues[currValues[s].neighbours.at(j)].x)
+                            +   (currValues[s].y - currValues[currValues[s].neighbours.at(j)].y) * (currValues[s].y - currValues[currValues[s].neighbours.at(j)].y)
+                            +   (currValues[s].z - currValues[currValues[s].neighbours.at(j)].z) * (currValues[s].z - currValues[currValues[s].neighbours.at(j)].z);
+                    double r2 = (currValues[s].x - currValues[currValues[s].neighbours.at(j+1)].x) * (currValues[s].x - currValues[currValues[s].neighbours.at(j+1)].x)
+                            +   (currValues[s].y - currValues[currValues[s].neighbours.at(j+1)].y) * (currValues[s].y - currValues[currValues[s].neighbours.at(j+1)].y)
+                            +   (currValues[s].z - currValues[currValues[s].neighbours.at(j+1)].z) * (currValues[s].z - currValues[currValues[s].neighbours.at(j+1)].z);
+                    if (r1 > r2)
+                        swap(currValues[s].neighbours.at(j), currValues[s].neighbours.at(j+1));
+                }
     }
 }
 
@@ -798,17 +1059,21 @@ void saveInFile()
         //mkdir("outputNoisyTracksFreeEnds");
         //mkdir("outputNoisyTracksZeroVelDeriv");
         //mkdir("outputNoisyTracksZeroAccelDeriv");
-        mkdir("outputNoisyTracksFreeEnds");
-        sprintf(filename, "outputNoisyTracksFreeEnds/splines%d_%d.txt", s, splineInterpolatorsX[s]->m_size);
+        //mkdir("outputNoisyTracksFreeEnds");
+        sprintf(filename, "output025/splines%d_%d.txt", s, splineInterpolatorsX[s]->m_size);
         FILE *file_data=fopen(filename,"w");
-        for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+        for( int i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
         {
-            fprintf(file_data,"%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\n", fileLoader->m_data[s].x[i], fileLoader->m_data[s].y[i], fileLoader->m_data[s].z[i]
+            fprintf(file_data,"%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\n", fileLoader->m_data[s].x[i], fileLoader->m_data[s].y[i], fileLoader->m_data[s].z[i]
                     , splineInterpolatorsX[s]->getCoord(i), splineInterpolatorsY[s]->getCoord(i), splineInterpolatorsZ[s]->getCoord(i)
-                    , fileLoader->m_vel[s].x[i], fileLoader->m_vel[s].y[i], fileLoader->m_vel[s].z[i]
                     , splineInterpolatorsX[s]->getVel(i), splineInterpolatorsY[s]->getVel(i), splineInterpolatorsZ[s]->getVel(i)
-                    , fileLoader->m_accel[s].x[i], fileLoader->m_accel[s].y[i], fileLoader->m_accel[s].z[i]
                     , splineInterpolatorsX[s]->getAccel(i), splineInterpolatorsY[s]->getAccel(i), splineInterpolatorsZ[s]->getAccel(i));
+           // fprintf(file_data,"%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\n", fileLoader->m_data[s].x[i], fileLoader->m_data[s].y[i], fileLoader->m_data[s].z[i]
+             //       , splineInterpolatorsX[s]->getCoord(i), splineInterpolatorsY[s]->getCoord(i), splineInterpolatorsZ[s]->getCoord(i)
+             //       , fileLoader->m_vel[s].x[i], fileLoader->m_vel[s].y[i], fileLoader->m_vel[s].z[i]
+              //      , splineInterpolatorsX[s]->getVel(i), splineInterpolatorsY[s]->getVel(i), splineInterpolatorsZ[s]->getVel(i)
+               //     , fileLoader->m_accel[s].x[i], fileLoader->m_accel[s].y[i], fileLoader->m_accel[s].z[i]
+                //    , splineInterpolatorsX[s]->getAccel(i), splineInterpolatorsY[s]->getAccel(i), splineInterpolatorsZ[s]->getAccel(i));
         }
         fclose(file_data);
     }
@@ -835,9 +1100,9 @@ void saveInFile()
     char filename[64];
     sprintf(filename, "particles%d_%d.txt", currTime, fileLoader->m_timeStepCount);
     FILE *file_data=fopen(filename,"w");
-    for (size_t s = 0; s < fileLoader->m_splinesCount; s++)
+    for (int s = 0; s < fileLoader->m_splinesCount; s++)
     {
-        for( size_t i = 0; i < splineInterpolatorsX[s]->m_size; i++ )
+        for( int i = 3; i < splineInterpolatorsX[s]->m_size-3; i++ )
         {
             if(currTime == splineInterpolatorsX[s]->m_time[i])
             {
@@ -863,9 +1128,9 @@ void calcRHS()
         {
             for (i=1;i<NX-1;i++)
             {
-                fileLoader->m_RHS[i][j][k] = -((fileLoader->m_accelField[0][i+1][j][k] - fileLoader->m_accelField[0][i-1][j][k])/(2.0 * dx)
+                fileLoader->m_RHS[i][j][k] = fileLoader->m_divAccelField[i][j][k];/*((fileLoader->m_accelField[0][i+1][j][k] - fileLoader->m_accelField[0][i-1][j][k])/(2.0 * dx)
                         + (fileLoader->m_accelField[1][i][j+1][k] - fileLoader->m_accelField[1][i][j-1][k])/(2.0 * dy)
-                        + (fileLoader->m_accelField[2][i][j][k+1] - fileLoader->m_accelField[2][i][j][k-1])/(2.0 * dz));
+                        + (fileLoader->m_accelField[2][i][j][k+1] - fileLoader->m_accelField[2][i][j][k-1])/(2.0 * dz));*/
             }
         }
     }
@@ -873,8 +1138,8 @@ void calcRHS()
     {
         for (k=1;k<NZ-1;k++)
         {
-            fileLoader->m_RHS[0][j][k]=-fileLoader->m_accelField[0][0][j][k];
-            fileLoader->m_RHS[NX-1][j][k]=-fileLoader->m_accelField[0][NX-1][j][k];
+            fileLoader->m_RHS[0][j][k]=fileLoader->m_accelField[0][0][j][k];
+            fileLoader->m_RHS[NX-1][j][k]=fileLoader->m_accelField[0][NX-1][j][k];
         }
     }
 
@@ -882,8 +1147,8 @@ void calcRHS()
     {
         for (k=1;k<NZ-1;k++)
         {
-            fileLoader->m_RHS[i][0][k]=-fileLoader->m_accelField[1][i][0][k];
-            fileLoader->m_RHS[i][NY-1][k]=-fileLoader->m_accelField[1][i][NY-1][k];
+            fileLoader->m_RHS[i][0][k]=fileLoader->m_accelField[1][i][0][k];
+            fileLoader->m_RHS[i][NY-1][k]=fileLoader->m_accelField[1][i][NY-1][k];
         }
     }
 
@@ -891,10 +1156,179 @@ void calcRHS()
     {
         for (j=1;j<NY-1;j++)
         {
-            fileLoader->m_RHS[i][j][0]=-fileLoader->m_accelField[2][i][j][0];
-            fileLoader->m_RHS[i][j][NZ-1]=-fileLoader->m_accelField[2][i][j][NZ-1];
+            fileLoader->m_RHS[i][j][0]=fileLoader->m_accelField[2][i][j][0];
+            fileLoader->m_RHS[i][j][NZ-1]=fileLoader->m_accelField[2][i][j][NZ-1];
         }
     }
+}
+
+void calcPressureNew()
+{
+    node3d n;
+    deriv3D derivsAx, derivsAy, derivsAz;
+    leastSquaresSolver lssAx, lssAy, lssAz;
+    for (int s = 0; s < currValues.size(); s++)
+    {
+        printf("s=%d\n", s);
+        if(currValues[s].neighbours.size() < 11)
+            continue;
+        if(currValues[s].neighbours.size() > 50)
+            currValues[s].neighbours.resize(50);
+
+        currValues[s].hasP = true;
+        lssAx.m_p.clear();
+        lssAy.m_p.clear();
+        lssAz.m_p.clear();
+        double rad = 0.5 * ((currValues[s].x - currValues[currValues[s].neighbours.at(currValues[s].neighbours.size() - 1)].x) * (currValues[s].x - currValues[currValues[s].neighbours.at(currValues[s].neighbours.size() - 1)].x)
+                +           (currValues[s].y - currValues[currValues[s].neighbours.at(currValues[s].neighbours.size() - 1)].y) * (currValues[s].y - currValues[currValues[s].neighbours.at(currValues[s].neighbours.size() - 1)].y)
+                +           (currValues[s].z - currValues[currValues[s].neighbours.at(currValues[s].neighbours.size() - 1)].z) * (currValues[s].z - currValues[currValues[s].neighbours.at(currValues[s].neighbours.size() - 1)].z));
+        for (int i = 0; i < currValues[s].neighbours.size(); i++)
+        {
+            n.x=currValues[currValues[s].neighbours[i]].x;
+            n.y=currValues[currValues[s].neighbours[i]].y;
+            n.z=currValues[currValues[s].neighbours[i]].z;
+            n.f = currValues[currValues[s].neighbours[i]].ax;
+            lssAx.m_p.push_back(n);
+            n.f = currValues[currValues[s].neighbours[i]].ay;
+            lssAy.m_p.push_back(n);
+            n.f = currValues[currValues[s].neighbours[i]].az;
+            lssAz.m_p.push_back(n);
+        }
+        n.x = currValues[s].x;
+        n.y = currValues[s].y;
+        n.z = currValues[s].z;
+
+        lssAx.get_derivs_fast(n, derivsAx,  rad);
+        lssAy.get_derivs_fast(n, derivsAy,  rad);
+        lssAz.get_derivs_fast(n, derivsAz,  rad);
+
+        currValues[s].diva = derivsAx.d[leastSquaresSolver::FX]
+                +  derivsAy.d[leastSquaresSolver::FY]
+                +  derivsAz.d[leastSquaresSolver::FZ];
+    }
+
+    boundary_plane bp;
+
+    bp.nx=1.0; bp.ny=0.0; bp.nz=0.0; bp.d=0.0; //0 x0
+    lssP.walls.push_back(bp);
+
+    bp.nx=1.0; bp.ny=0.0; bp.nz=0.0; bp.d=1.0; //1 x1
+    lssP.walls.push_back(bp);
+
+    bp.nx=0.0; bp.ny=1.0; bp.nz=0.0; bp.d=0.0; //2 y0
+    lssP.walls.push_back(bp);
+
+    bp.nx=0.0; bp.ny=1.0; bp.nz=0.0; bp.d=1.0; //3 y2
+    lssP.walls.push_back(bp);
+
+    bp.nx=0.0; bp.ny=0.0; bp.nz=1.0; bp.d=0.0; //4 z0
+    lssP.walls.push_back(bp);
+
+    bp.nx=0.0; bp.ny=0.0; bp.nz=1.0; bp.d=0.1; //5 z0
+    lssP.walls.push_back(bp);
+
+
+    /*double d = 2.0 * ((currValues[0].x - currValues[currValues[0].neighbours.at(0)].x) * (currValues[0].x - currValues[currValues[0].neighbours.at(0)].x)
+            +         (currValues[0].y - currValues[currValues[0].neighbours.at(0)].y) * (currValues[0].y - currValues[currValues[0].neighbours.at(0)].y)
+            +         (currValues[0].z - currValues[currValues[0].neighbours.at(0)].z) * (currValues[0].z - currValues[currValues[0].neighbours.at(0)].z));
+    printf("d = %f\n", d);
+    for (int i = 0; i < currValues.size(); i++)
+    {
+        printf("i=%d\n", i);
+        currValues[i].p = 0;
+
+        for (int j = 0; j < currValues.size(); j++)
+        {
+            if(!currValues[j].hasP)
+                continue;
+            double r = (currValues[i].x - currValues[j].x) * (currValues[i].x - currValues[j].x)
+                    +  (currValues[i].y - currValues[j].y) * (currValues[i].y - currValues[j].y)
+                    +  (currValues[i].z - currValues[j].z) * (currValues[i].z - currValues[j].z);
+            currValues[i].p -= currValues[j].diva  * d * d * d / 3.0  / (r + 0.01);
+        }
+    }*/
+    printf("Pressure calculating finished\n");
+}
+
+void solvePoisson()
+{
+    node3d n;
+    //printf("aaaaaaaaaaaaaaaaaaa\n");
+    for (int s = 0; s < currValues.size(); s++)
+    {
+        //printf("s=%d\n", s);
+        if(currValues[s].neighbours.size() < 11)
+        {
+            printf("lesThenEleven\n");
+            continue;
+        }
+        if(currValues[s].neighbours.size() > 50)
+            currValues[s].neighbours.resize(50);
+
+        lssP.m_p.clear();
+
+        n.x = currValues[s].x;
+        n.y = currValues[s].y;
+        n.z = currValues[s].z;
+        n.f = currValues[s].p;
+        n.rhs=-currValues[s].diva;
+
+        if(currValues[s].isBound)
+        {
+            n.is_boundary=currValues[s].boundType;
+            n.f_bound=0.0;
+            if(n.is_boundary == 0 || n.is_boundary == 1)
+                n.f_bound = currValues[s].ax;
+            if(n.is_boundary == 2 || n.is_boundary == 3)
+                n.f_bound = currValues[s].ay;
+            if(n.is_boundary == 4 || n.is_boundary == 5)
+                n.f_bound = currValues[s].az;
+        }
+        else
+        {
+            n.is_boundary=-1;
+            n.f_bound=0.0;
+        }
+        lssP.m_p.push_back(n);
+
+        for (int i = 0; i < currValues[s].neighbours.size(); i++)
+        {
+            n.x = currValues[currValues[s].neighbours[i]].x;
+            n.y = currValues[currValues[s].neighbours[i]].y;
+            n.z = currValues[currValues[s].neighbours[i]].z;
+            n.f = currValues[currValues[s].neighbours[i]].p;
+            n.rhs=currValues[currValues[s].neighbours[i]].diva;
+            if(currValues[currValues[s].neighbours[i]].isBound)
+            {
+                n.is_boundary=currValues[currValues[s].neighbours[i]].boundType;
+                n.f_bound=0.0;
+                if(n.is_boundary == 0 || n.is_boundary == 1)
+                    n.f_bound = currValues[currValues[s].neighbours[i]].ax;
+                if(n.is_boundary == 2 || n.is_boundary == 3)
+                    n.f_bound = currValues[currValues[s].neighbours[i]].ay;
+                if(n.is_boundary == 4 || n.is_boundary == 5)
+                    n.f_bound = currValues[currValues[s].neighbours[i]].az;
+            }
+            else
+            {
+                n.is_boundary=-1;
+                n.f_bound=0.0;
+            }
+            lssP.m_p.push_back(n);
+        }
+        //printf("size=%d\n", lssP.m_p.size());
+        if (lssP.m_p[0].is_boundary>=0)
+        {
+            lssP.get_poisson_boundary(lssP.m_p[0],lssP.m_d[0],0.125);
+
+        }else
+        {
+            lssP.get_poisson_internal(lssP.m_p[0],lssP.m_d[0],0.125);
+        }
+        currValues[s].p =  lssP.m_p[0].f;
+    }
+    printf("done\n");
+
 }
 
 void calcPressure(int in_) //poisson equation at the cell centers
@@ -968,7 +1402,6 @@ void calcPressure(int in_) //poisson equation at the cell centers
         {
             for (j=1;j<NY-1;j++)
             {
-
                 for (k=1;k<NZ-1;k++)
                 {
                     pressure_mean += fileLoader->m_pressureField[i][j][k];
@@ -1011,45 +1444,45 @@ void kb(unsigned char key, int x, int y)
     }
     if (key=='4')
     {
-        drawVelocity = !drawVelocity;
+        //drawVelocity = !drawVelocity;
     }
     if (key=='5')
     {
-        drawAcceleration = !drawAcceleration;
+        //drawAcceleration = !drawAcceleration;
     }
     if (key=='6')
     {
-        drawGridVel = !drawGridVel;
+        /*drawGridVel = !drawGridVel;
         if(drawGridVel)
         {
             drawGridAccel = false;
             drawGridPressure = false;
-            interpolateInGrid();
-            average(100);
-        }
+            //interpolateInGrid();
+            //average(100);
+        }*/
     }
     if (key=='7')
     {
-        drawGridAccel = !drawGridAccel;
+        /*drawGridAccel = !drawGridAccel;
         if(drawGridAccel)
         {
             drawGridVel = false;
             drawGridPressure = false;
-            interpolateInGrid();
-            average(100);
-        }
+            //interpolateInGrid();
+            //average(100);
+        }*/
     }
     if (key=='8')
     {
-        drawGridPressure = !drawGridPressure;
+        /*drawGridPressure = !drawGridPressure;
         if(drawGridPressure)
         {
             drawGridVel = false;
             drawGridAccel = false;
             interpolateInGrid();
-            average(100);
-            calcPressure(10);
-        }
+            //average(100);
+            calcPressure(500);
+        }*/
     }
     if (key=='0')
     {
@@ -1057,10 +1490,10 @@ void kb(unsigned char key, int x, int y)
         {
             currTime+=1;
             updateCurrValues();
-            findNeighbors();
+            //findNeighbors();
         }
 
-        if(drawGridVel || drawGridAccel)
+        /*if(drawGridVel || drawGridAccel)
         {
             interpolateInGrid();
             average(100);
@@ -1070,7 +1503,7 @@ void kb(unsigned char key, int x, int y)
             interpolateInGrid();
             average(100);
             calcPressure(10);
-        }
+        }*/
         printf("Time %d/%d\n", currTime, fileLoader->m_timeStepCount);
     }
     if (key=='9')
@@ -1079,9 +1512,9 @@ void kb(unsigned char key, int x, int y)
         {
             currTime-=1;
             updateCurrValues();
-            findNeighbors();
+            //findNeighbors();
         }
-        if(drawGridVel || drawGridAccel)
+        /*if(drawGridVel || drawGridAccel)
         {
             interpolateInGrid();
             average(100);
@@ -1091,7 +1524,7 @@ void kb(unsigned char key, int x, int y)
             interpolateInGrid();
             average(100);
             calcPressure(10);
-        }
+        }*/
         printf("Time %d/%d\n", currTime, fileLoader->m_timeStepCount);
     }
     if (key=='b')
@@ -1121,6 +1554,12 @@ void kb(unsigned char key, int x, int y)
         jNum--;
         if(jNum<0)
             jNum=0;
+    }
+    if (key=='m')
+    {
+        for(int i = 0; i<20 ; i++)
+            solvePoisson();
+        //calcPressure(500);
     }
 
     if (key=='.')
@@ -1178,13 +1617,13 @@ void kb(unsigned char key, int x, int y)
 
     if(key == 'c')
     {
-        for (size_t s = 0; s < fileLoader->m_splinesCount;s++)
+        /*for (size_t s = 0; s < fileLoader->m_splinesCount;s++)
         {
             splineInterpolatorsX[s]->optimizeByGrad(1);
             splineInterpolatorsY[s]->optimizeByGrad(1);
             splineInterpolatorsZ[s]->optimizeByGrad(1);
         }
-        printf("One minimization step is done\n");
+        printf("One minimization step is done\n");*/
     }
     if(key == 'z')
     {
@@ -1244,21 +1683,32 @@ void init()
     loadSettings();
     fileLoader = new FileLoader(PATH);
     fileLoader->findFileInDir();
-    fileLoader->loadSplinesFromVlad();//fileLoader->loadSplinesFromDinar();//fileLoader->loadSplinesFromOneFile();//fileLoader->loadSplinesFromNewFormat();//fileLoader->loadSplines();
+    fileLoader->loadSplines();//fileLoader->loadSplinesFromOneFile();//fileLoader->loadSplinesFromVlad();//fileLoader->loadSplinesFromDinar();//fileLoader->loadSplinesFromOneFile();//fileLoader->loadSplinesFromNewFormat();//fileLoader->loadSplines();
     printf("%d tracks loaded\n", fileLoader->m_splinesCount);
     splineInterpolatorsX.resize(fileLoader->m_splinesCount);
     splineInterpolatorsY.resize(fileLoader->m_splinesCount);
     splineInterpolatorsZ.resize(fileLoader->m_splinesCount);
-    for (size_t i = 0; i < fileLoader->m_splinesCount; i++)
+    int numbers = 0;
+    for (size_t i = 0; i < fileLoader->m_splinesCount; i+=1)
     {
-        splineInterpolatorsX[i] = (new SplineInterpolator(fileLoader->m_data[i].x, fileLoader->m_data[i].t));
-        splineInterpolatorsY[i] = (new SplineInterpolator(fileLoader->m_data[i].y, fileLoader->m_data[i].t));
-        splineInterpolatorsZ[i] = (new SplineInterpolator(fileLoader->m_data[i].z, fileLoader->m_data[i].t));
+
+        splineInterpolatorsX[numbers] = (new SplineInterpolator(fileLoader->m_data[i].x, fileLoader->m_data[i].t));
+        splineInterpolatorsY[numbers] = (new SplineInterpolator(fileLoader->m_data[i].y, fileLoader->m_data[i].t));
+        splineInterpolatorsZ[numbers] = (new SplineInterpolator(fileLoader->m_data[i].z, fileLoader->m_data[i].t));
+        //splineInterpolatorsX[i] = (new SplineInterpolator(fileLoader->m_data[i].x, fileLoader->m_data[i].t));
+        //splineInterpolatorsY[i] = (new SplineInterpolator(fileLoader->m_data[i].y, fileLoader->m_data[i].t));
+        //splineInterpolatorsZ[i] = (new SplineInterpolator(fileLoader->m_data[i].z, fileLoader->m_data[i].t));
+        numbers ++;
     }
+    fileLoader->m_splinesCount = numbers;
+    splineInterpolatorsX.resize(numbers);
+    splineInterpolatorsY.resize(numbers);
+    splineInterpolatorsZ.resize(numbers);
     printf("Splines calculated\n");
 
     updateCurrValues();
     //findNeighbors();
+    //calcPressureNew();
 
     view_x=xmin-0.5*(xmax-xmin);//xmin-0.5*(xmax-xmin);
     view_y=0.5*(ymax-ymin);//ymin-0.5*(ymax-ymin);

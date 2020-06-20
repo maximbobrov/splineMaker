@@ -121,7 +121,7 @@ void FileLoader::loadSplinesFromVlad()
     m_vel.clear();
     m_accel.clear();
     m_p.clear();
-    m_fileNames.resize(15);
+    m_fileNames.resize(10);
     m_timeStepCount = m_fileNames.size();
     for (size_t i = 0 ; i < m_fileNames.size(); i++)
     {
@@ -139,7 +139,7 @@ void FileLoader::loadSplinesFromVlad()
         while(!feof (file_data))
         {
             fscanf(file_data,"%lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %d", &xx, &yy, &zz, &ux, &uy, &uz, &ax, &ay, &az, &pp, &num);
-            if((num >= 0) && (num < 1000000))
+            if((num >= 0) && (num < 1000000) && num % 5 == 0)
             {
                 if(m_numbers[num] == -1)
                 {
@@ -288,7 +288,7 @@ void FileLoader::loadSplinesFromOneFile()
 {
     m_data.clear();
     FILE *file_data = fopen( PATH, "r");
-    int lastNum, currNum;
+    int lastNum, currNum, readNum;
     currNum = 0;
     lastNum = 0;
     printf("name=%s\n", PATH);
@@ -296,34 +296,37 @@ void FileLoader::loadSplinesFromOneFile()
     m_data.push_back(vec3());
     double xx, yy, zz;
     int pointNum;
+    int numbers = 0;
     m_timeStepCount = 0;
     while(!feof (file_data))
     {
         lastNum = currNum;
         int out = fscanf(file_data, "%d%*c%d%*c%lf%*c%lf%*c%lf%*c",&currNum, &pointNum, &xx, &yy, &zz);
-        if (out>0)
+        if (out>0 && currNum%1 == 0)
         {
             if(pointNum > m_timeStepCount)
                 m_timeStepCount = pointNum;
             if(currNum != lastNum)
             {
-                m_numbers[currNum] = 0;
+
+                m_numbers[numbers] = 0;
                 m_data.push_back(vec3(xx, yy, zz, pointNum));
-                m_numbers[currNum]++;
+                m_numbers[numbers]++;
                 xmin = xx < xmin ? xx : xmin;
                 xmax = xx > xmax ? xx : xmax;
                 ymin = yy < ymin ? yy : ymin;
                 ymax = yy > ymax ? yy : ymax;
                 zmin = zz < zmin ? zz : zmin;
                 zmax = zz > zmax ? zz : zmax;
+                numbers++;
             }
             else
             {
-                m_data[currNum].x.push_back(xx);
-                m_data[currNum].y.push_back(yy);
-                m_data[currNum].z.push_back(zz);
-                m_data[currNum].t.push_back(pointNum);
-                m_numbers[currNum]++;
+                m_data[numbers].x.push_back(xx);
+                m_data[numbers].y.push_back(yy);
+                m_data[numbers].z.push_back(zz);
+                m_data[numbers].t.push_back(pointNum);
+                m_numbers[numbers]++;
                 xmin = xx < xmin ? xx : xmin;
                 xmax = xx > xmax ? xx : xmax;
                 ymin = yy < ymin ? yy : ymin;
